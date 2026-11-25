@@ -1,6 +1,6 @@
 // ===================== Team Traits + AI მიგნებები =====================
-import { DB, teamRows, aggregate, playerLines, playerTotals, injuriesNear, S } from './engine.js?v=202611251622';
-import { tn } from './markets.js?v=202611251622';
+import { DB, teamRows, aggregate, playerLines, playerTotals, injuriesNear, S } from './engine.js?v=202611251707';
+import { tn } from './markets.js?v=202611251707';
 
 const f1 = x => x == null ? '—' : (Math.round(x * 10) / 10).toString();
 const P = x => Math.round(x * 100) + '%';
@@ -85,8 +85,8 @@ export function patterns(tid, before, venue = 'all') {
   const lastSt = rows.filter(r => r.st && r.so).slice(-10), ns = lastSt.length;
   if (ns >= 6) {
     const sf = [
-      [r => r.st[S.COR] >= 6, '6+ კუთხური აიღო'], [r => r.so[S.COR] >= 6, 'მეტოქეს 6+ კუთხური მისცა'], [r => r.st[S.COR] + r.so[S.COR] >= 10, 'მატჩში 10+ კუთხური იყო'],
-      [r => (r.st[S.YC] || 0) >= 2, '2+ ყვითელი მიიღო'], [r => (r.st[S.YC] || 0) + (r.so[S.YC] || 0) >= 5, 'მატჩში 5+ ყვითელი იყო'],
+      [r => r.st[S.COR] >= 6, '6+ კუთხური აიღო'], [r => r.so[S.COR] >= 6, 'მეტოქეს 6+ კუთხური მისცა'], [r => r.st[S.COR] + r.so[S.COR] >= 10, '10+ კუთხური იყო'],
+      [r => (r.st[S.YC] || 0) >= 2, '2+ ყვითელი მიიღო'], [r => (r.st[S.YC] || 0) + (r.so[S.YC] || 0) >= 5, '5+ ყვითელი იყო'],
       [r => (r.st[S.SOT] || 0) >= 5, 'კარში 5+ დარტყმა შეასრულა'], [r => (r.st[S.COR] || 0) <= 3, '3 ან ნაკლები კუთხური აიღო'],
     ];
     for (const [pred, txt] of sf) { const k = lastSt.filter(pred).length; if (k / ns >= 0.8) out.push({ w: k / ns * 5, txt: `ბოლო ${ns}-დან ${k} მატჩში ${txt}${where}`, tone: 'info' }); }
@@ -152,4 +152,125 @@ export function standings(code, before, roundFilter) {
     else { h.d++; a.d++; h.pts++; a.pts++; h.form.push('D'); a.form.push('D'); }
   }
   return Object.values(tbl).sort((x, y) => y.pts - x.pts || (y.gf - y.ga) - (x.gf - x.ga) || y.gf - x.gf || tn(x.t).localeCompare(tn(y.t)));
+}
+
+// ===================== დასვენება / დატვირთვა =====================
+export function restInfo(tid, f) {
+  const list = DB.byTeam[tid] || [];
+  const prev = [...list].reverse().find(x => x.t < f.t && x.i !== f.i);
+  const next = list.find(x => x.t > f.t && x.i !== f.i);
+  const last14 = list.filter(x => x.t < f.t && x.t >= f.t - 14 * 864e5).length;
+  const days = prev ? (f.t - prev.t) / 864e5 : null, nextDays = next ? (next.t - f.t) / 864e5 : null;
+  const tags = [];
+  if (days != null && days < 3.6) tags.push({ t: `მხოლოდ ${Math.round(days * 10) / 10} დღე დასვენება`, tone: 'bad' });
+  else if (days != null && days >= 6.5) tags.push({ t: 'კარგად დასვენებული', tone: 'good' });
+  if (last14 >= 4) tags.push({ t: `დატვირთული გრაფიკი: ${last14} მატჩი 14 დღეში`, tone: 'bad' });
+  if (next && nextDays <= 4 && DB.comps[next.c]?.group !== 'league') tags.push({ t: `${Math.round(nextDays)} დღეში ${DB.comps[next.c].name} — შეიძლება როტაცია`, tone: 'hot' });
+  const partial = DB.core && !DB.core.has(tid); // ამ გუნდის ეროვნული ლიგა ჩვენს ბაზაში არ არის
+  if (partial) return { prev, next, days, nextDays, last14, tags: [], partial };
+  return { prev, next, days, nextDays, last14, tags };
+}
+
+// ===================== მოტივაცია (ცხრილის მიხედვით) =====================
+const EURO_SPOTS = { pl: 5, ll: 5, sa: 4, bl: 4, l1: 3, ed: 2 };
+const RELEG = { pl: 3, ll: 3, sa: 3, bl: 2, l1: 2, ed: 2 };
+export function motivation(tid, f) {
+  const C = DB.comps[f.c]; if (!C) return null;
+  if (C.group === 'cup') return { label: 'თასი — ნოკაუტი, დამარცხება = გავარდნა', tone: 'hot', lines: [] };
+  if (C.group === 'euro') {
+    if (/League Stage/i.test(f.r || '')) {
+      const tbl = standings(f.c, f.t, r => /League Stage/i.test(r || '')); const pos = tbl.findIndex(x => x.t === tid) + 1;
+      if (!pos) return null;
+      const label = pos <= 8 ? 'ტოპ-8 — პირდაპირ 1/8 ფინალისკენ' : pos <= 24 ? 'პლეი-ოფის ზონა (9–24)' : 'გავარდნის ზონა (25+)';
+      return { label: `ლიგის ფაზა: ${pos}-ე ადგილი · ${label}`, tone: pos > 24 ? 'bad' : pos <= 8 ? 'good' : 'info', lines: [] };
+    }
+    return { label: 'ევროთასის ნოკაუტი — მაქსიმალური მოტივაცია', tone: 'hot', lines: [] };
+  }
+  const tbl = standings(f.c, f.t); const n = tbl.length, i = tbl.findIndex(x => x.t === tid); if (i < 0) return null;
+  const me = tbl[i], pos = i + 1;
+  const totalRounds = (n - 1) * 2, left = totalRounds - me.p, maxGain = left * 3;
+  const eu = EURO_SPOTS[f.c] || 4, rel = RELEG[f.c] || 3;
+  const toTop = tbl[0].pts - me.pts, toEuro = tbl[eu - 1].pts - me.pts, toSafe = me.pts - tbl[n - rel - 1]?.pts;
+  const lines = [`${pos}-ე ადგილი, ${me.pts} ქულა, დარჩენილია ${left} მატჩი`];
+  if (pos > 1) lines.push(`ლიდერამდე: ${toTop} ქულა`);
+  if (pos > eu) lines.push(`ჩემპიონთა ლიგის ზონამდე (${eu}-ე ადგილი): ${toEuro} ქულა`);
+  if (pos > n - rel) lines.push(`გადარჩენის ზონამდე: ${-toSafe} ქულა`); else if (pos >= n - rel - 3) lines.push(`ჩავარდნის ზონიდან დაშორება: ${toSafe + 0} ქულა`);
+  let label, tone = 'info';
+  if (left > totalRounds * 0.6) label = 'სეზონის პირველი ნახევარი — მოტივაცია ჩვეულებრივი';
+  else if (pos <= 3 && toTop <= Math.min(maxGain, 9)) { label = 'ტიტულისთვის ბრძოლა'; tone = 'hot'; }
+  else if (pos > n - rel || (pos >= n - rel - 3 && toSafe <= 6)) { label = 'გადარჩენისთვის ბრძოლა'; tone = 'bad'; }
+  else if (Math.abs(toEuro) <= 6 && pos <= eu + 4) { label = 'ევროპული ადგილებისთვის ბრძოლა'; tone = 'good'; }
+  else if (left <= 8) { label = 'ცხრილის შუა — მოტივაცია შეიძლება დაბალი იყოს'; tone = 'cold'; }
+  else label = 'მოტივაცია ჩვეულებრივი';
+  return { label, tone, lines };
+}
+
+// ===================== მწვრთნელი =====================
+export function coachInfo(tid, before) {
+  const c = DB.coaches?.[tid]?.cur; if (!c) return null;
+  const [name, start] = c;
+  const out = { name, start };
+  if (start) {
+    const st = Date.parse(start);
+    const rows = teamRows(tid, before);
+    const after = rows.filter(r => r.t >= st), prior = rows.filter(r => r.t < st);
+    if (after.length && prior.length) {
+      const A = aggregate(after), B = aggregate(prior);
+      out.change = { n: A.n, w: A.w, d: A.d, l: A.l, ppg: A.ppg, ppg0: B.ppg, n0: B.n, gf: A.gf, ga: A.ga, gf0: B.gf, ga0: B.ga };
+    }
+  }
+  return out;
+}
+
+// ===================== სცენარები =====================
+export function scenarios(tid, before, venue = 'all') {
+  const rows = teamRows(tid, before, venue).filter(r => r.f.tl);
+  const out = [];
+  const pts = r => r.res === 'W' ? 3 : r.res === 'D' ? 1 : 0;
+  const avgSt = (arr, i) => { const a = arr.filter(r => r.st); return a.length ? a.reduce((s, r) => s + (r.st[i] || 0), 0) / a.length : null; };
+  const add = (title, n, text, tone = 'info') => out.push({ title, n, text, tone });
+  // 1. როცა წაგებაზეა
+  const tr = rows.filter(r => r.trailed), nt = rows.filter(r => !r.trailed);
+  if (tr.length >= 3) {
+    const pp = tr.reduce((s, r) => s + pts(r), 0) / tr.length;
+    add('როცა წაგებაზეა', tr.length, `${tr.length} მატჩში იყო წაგებაზე → საბოლოოდ ${tr.filter(r => r.res === 'W').length} მოგება, ${tr.filter(r => r.res === 'D').length} ფრე, ${tr.filter(r => r.res === 'L').length} წაგება (${f1(pp)} ქულა/მატჩი). ასეთ მატჩებში: ${f1(avgSt(tr, S.COR))} კუთხური, ${f1(avgSt(tr, S.SH))} დარტყმა, ${f1(avgSt(tr, S.YC))} ყვითელი (სხვა მატჩებში: ${f1(avgSt(nt, S.COR))} / ${f1(avgSt(nt, S.SH))} / ${f1(avgSt(nt, S.YC))}).`, pp >= 1 ? 'good' : 'bad');
+  }
+  // 2. როცა პირველი იტანს
+  const sf = rows.filter(r => r.first === 'us');
+  if (sf.length >= 3) {
+    const more = sf.filter(r => r.goalsFor.length >= 2).length;
+    add('როცა პირველი იტანს', sf.length, `${sf.length} მატჩში გაიტანა პირველმა → ${sf.filter(r => r.res === 'W').length} მოგება, ${sf.filter(r => r.res === 'D').length} ფრე, ${sf.filter(r => r.res === 'L').length} წაგება. ${more}-ში მეორე გოლიც გაიტანა; ${sf.filter(r => r.ga > 0).length}-ში მაინც გაუშვა. კუთხური ასეთ მატჩებში: ${f1(avgSt(sf, S.COR))}, კარში დარტყმა: ${f1(avgSt(sf, S.SOT))}.`, sf.filter(r => r.res === 'W').length / sf.length >= 0.7 ? 'good' : 'bad');
+  }
+  // 3. ფრე 70-ე წუთზე
+  const lvl = rows.filter(r => { const a = r.goalsFor.filter(m => m <= 70).length, b = r.goalsAg.filter(m => m <= 70).length; return a === b; });
+  if (lvl.length >= 3) {
+    const w = lvl.filter(r => r.res === 'W').length, d = lvl.filter(r => r.res === 'D').length, l = lvl.filter(r => r.res === 'L').length;
+    const late = lvl.filter(r => r.goalsFor.some(m => m > 70) || r.goalsAg.some(m => m > 70)).length;
+    add('ფრე 70-ე წუთზე', lvl.length, `${lvl.length} მატჩში ანგარიში 70'-ზე თანაბარი იყო → ${w} მოგება, ${d} ფრე, ${l} წაგება; ${late}-ში 70'-ის მერე გოლი გავიდა.`, w > l ? 'good' : l > w ? 'bad' : 'info');
+  }
+  // 4. წითელი ბარათის მერე
+  const red = rows.filter(r => (r.f.ev || []).some(e => e[3] === 'C' && /Red|Second Yellow/i.test(e[4] || '') && e[2] === (r.home ? 0 : 1)));
+  if (red.length) {
+    const ga = red.map(r => { const m = Math.min(...r.f.ev.filter(e => e[3] === 'C' && /Red|Second Yellow/i.test(e[4] || '') && e[2] === (r.home ? 0 : 1)).map(e => e[0])); return r.goalsAg.filter(x => x >= m).length; });
+    add('წითელი ბარათის მიღების მერე', red.length, `${red.length} მატჩში მიიღო წითელი → ${red.filter(r => r.res === 'W').length} მოგება, ${red.filter(r => r.res === 'D').length} ფრე, ${red.filter(r => r.res === 'L').length} წაგება; წითლის მერე საშუალოდ ${f1(ga.reduce((a, b) => a + b, 0) / red.length)} გოლი გაუშვა.`, 'bad');
+  }
+  // 5. შესვენებაზე წაგებისას
+  const htL = rows.filter(r => r.htf != null && r.htf < r.hta);
+  if (htL.length >= 2) {
+    add('შესვენებაზე წაგებისას', htL.length, `${htL.length}-ჯერ წააგო პირველი ტაიმი → ${htL.filter(r => r.res === 'W').length} მოგება, ${htL.filter(r => r.res === 'D').length} ფრე, ${htL.filter(r => r.res === 'L').length} წაგება; მე-2 ტაიმში საშუალოდ ${f1(htL.reduce((s, r) => s + r.h2f, 0) / htL.length)} გოლი გაიტანა.`, htL.some(r => r.res !== 'L') ? 'good' : 'bad');
+  }
+  // 6. 2-გოლიანი უპირატესობა
+  const two = rows.filter(r => { let us = 0, th = 0; for (const [m, side] of r.f.tl) { if (side === (r.home ? 0 : 1)) us++; else th++; if (us - th >= 2) return true; } return false; });
+  if (two.length >= 2) {
+    const lost = two.filter(r => r.res !== 'W').length;
+    add('2-გოლიანი უპირატესობისას', two.length, `${two.length}-ჯერ დაწინაურდა 2 გოლით → ${two.length - lost} მოგება${lost ? `, ${lost}-ჯერ ვერ მოიგო (უპირატესობა დაკარგა)` : ' — ერთხელაც არ დაუკარგავს'}.`, lost ? 'bad' : 'good');
+  }
+  // 7. პენალტები
+  const allRows = teamRows(tid, before, venue).filter(r => r.f.ev);
+  if (allRows.length >= 5) {
+    const pen = (r, mine) => r.f.ev.filter(e => e[3] === 'G' && (e[4] === 'Penalty' || e[4] === 'Missed Penalty') && (e[2] === (r.home ? 0 : 1)) === mine && e[0] <= 120).length;
+    const won = allRows.reduce((s, r) => s + pen(r, true), 0), con = allRows.reduce((s, r) => s + pen(r, false), 0);
+    add('პენალტები', allRows.length, `${allRows.length} მატჩში: მიიღო ${won} პენალტი (${f1(won / allRows.length)}/მატჩი), მისცა ${con} (${f1(con / allRows.length)}/მატჩი).`, won > con ? 'good' : con > won ? 'bad' : 'info');
+  }
+  return out;
 }

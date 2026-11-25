@@ -227,12 +227,15 @@ export function predict(f) {
   const hH = hAll.filter(r => r.home), aA = aAll.filter(r => !r.home);
   const allG = (L.hg + L.ag) / 2;
   // ვენიუს მიხედვით, შეკუმშული მთლიან საშუალოზე
-  const venue = (vRows, all, own, base) => {
-    const overall = wAvg(all, r => blendG(r, own), allG, 3, before) * base / allG;
-    return wAvg(vRows, r => blendG(r, own), overall, 4, before);
+  // გუნდები, რომელთა ლიგაც ჩვენს ბაზაში არ არის (მაგ. სპორტინგი), მცირე მონაცემით ფასდება — უფრო ძლიერ ვკუმშავთ საშუალოსკენ
+  const kOf = tid => DB.core && !DB.core.has(tid) ? 10 : 4;
+  const venue = (vRows, all, own, base, k) => {
+    const overall = wAvg(all, r => blendG(r, own), allG, k - 1, before) * base / allG;
+    return wAvg(vRows, r => blendG(r, own), overall, k, before);
   };
-  const hAtt = venue(hH, hAll, true, L.hg) / L.hg, hDef = venue(hH, hAll, false, L.ag) / L.ag;
-  const aAtt = venue(aA, aAll, true, L.ag) / L.ag, aDef = venue(aA, aAll, false, L.hg) / L.hg;
+  const kh = kOf(f.h), ka = kOf(f.a);
+  const hAtt = venue(hH, hAll, true, L.hg, kh) / L.hg, hDef = venue(hH, hAll, false, L.ag, kh) / L.ag;
+  const aAtt = venue(aA, aAll, true, L.ag, ka) / L.ag, aDef = venue(aA, aAll, false, L.hg, ka) / L.hg;
   const lh = Math.max(0.15, L.hg * hAtt * aDef), la = Math.max(0.1, L.ag * aAtt * hDef);
   const htr = Math.min(0.5, Math.max(0.38, L.ht));
   const h1 = poisArr(lh * htr), a1 = poisArr(la * htr), h2 = poisArr(lh * (1 - htr)), a2 = poisArr(la * (1 - htr));

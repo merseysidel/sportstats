@@ -1,5 +1,6 @@
 // ===================== ფსონების კატალოგი + AI ფსონები (შაბლონური ტექსტით) =====================
-import { DB, S, scorerProbs } from './engine.js?v=202611251622';
+import { CALIB } from './calib.js?v=202611251707';
+import { DB, S, scorerProbs } from './engine.js?v=202611251707';
 
 const fmt1 = x => x == null ? '—' : (Math.round(x * 10) / 10).toString();
 export const tn = id => DB.teams[id]?.name || '#' + id;
@@ -140,7 +141,24 @@ export function buildMarkets(pr) {
   g(OT, 'გააკეთებს ასისტს', [...top(hs, 'pa', 4), ...top(as, 'pa', 4)].sort((a, b) => b.pa - a.pa).map(p => ({ label: p.name, p: p.pa, fam: 'pa', pl: p })));
   g(OT, 'კარში დარტყმა 1+', [...top(hs, 'psot', 5), ...top(as, 'psot', 5)].sort((a, b) => b.psot - a.psot).map(p => ({ label: p.name, p: p.psot, fam: 'psot', pl: p })));
   g(OT, 'მიიღებს ყვითელს', [...top(hs, 'pyc', 4), ...top(as, 'pyc', 4)].sort((a, b) => b.pyc - a.pyc).map(p => ({ label: p.name, p: p.pyc, fam: 'pyc', pl: p })));
+  for (const gr of [...R, ...ST, ...OT]) for (const it of gr.items) { it.raw = it.p; it.p = calibrate(it.fam, it.p); }
   return { R, ST, OT, hs, as };
+}
+
+// -------------------------------------------------- დაკალიბრება (2025-2026 სეზონის 2,400 მატჩით შემოწმებული)
+// 1) მოთამაშეების ბაზრები: isotonic ცხრილი (მოდელი აქ ზედმეტად თავდაჯერებული იყო, მაგ. „კარში დარტყმა 1+“ 70%+ → რეალურად 60%)
+// 2) 85%-ზე მაღალი ალბათობები ოდნავ იკუმშება (90–95% რეალურად ~87%-ით მართლდებოდა)
+// 3) 1X2 და BTTS ცენტრისკენ იკუმშება (76% → რეალურად ~67%)
+const PLAYER_FAMS = new Set(['ps', 'pa', 'psot', 'pyc']);
+export function calibrate(fam, p) {
+  if (PLAYER_FAMS.has(fam) && CALIB.groups.players) {
+    const t = CALIB.groups.players, x = Math.max(0, Math.min(1, p)) / CALIB.grid_step;
+    const i = Math.floor(x), fr = x - i;
+    p = i >= t.length - 1 ? t[t.length - 1] : t[i] * (1 - fr) + t[i + 1] * fr;
+  }
+  if (fam === '1x2' || fam === 'btts') p = 0.5 + (p - 0.5) * 0.8;
+  if (p > 0.85) p = 0.85 + (p - 0.85) * 0.5;
+  return Math.max(0.001, Math.min(0.999, p));
 }
 
 // -------------------------------------------------- ბუკმეკერის კოეფიციენტები
@@ -191,7 +209,7 @@ export function oddsFor(f, it) {
 }
 
 // -------------------------------------------------- AI ფსონები
-const NO_PICK = new Set(['cs', 'exg', 'htft', 'hh', 'oe', 'bttso', 'poss', 'h2r', 'ht', 'fg', 'rc', 'dnb']);
+const NO_PICK = new Set(['cs', 'exg', 'htft', 'hh', 'oe', 'bttso', 'poss', 'h2r', 'ht', 'fg', 'rc', 'dnb', 'ah', 'cs1', 'wtn']); // ah/cs1/wtn: 2025-26-ზე 40–50%-ით მართლდებოდა
 export function aiPicks(mk, min = 0.7, max = 8, f = null) {
   const all = [...mk.R, ...mk.ST, ...mk.OT].flatMap(gr => gr.items.map(it => ({ ...it, group: gr.title })));
   const best = {};
@@ -202,6 +220,7 @@ export function aiPicks(mk, min = 0.7, max = 8, f = null) {
       const o = oddsFor(f, it);
       if (o && o.absent) continue;                 // ბუკმეკერი ამ ხაზს არც კი სთავაზობს
       if (o && o.odd < minOdd) continue;           // კოეფიციენტი ზედმეტად დაბალია
+      if (o && it.p * o.odd > 1.6) continue;       // მოდელი ბუკმეკერს ძალიან ეწინააღმდეგება (მაგ. 83% vs 3.00) — სავარაუდოდ მოდელის შეცდომა
       if (o) { it.odd = o.odd; it.book = o.book; it.value = it.p * o.odd - 1; }
       // კოეფიციენტი უცნობია: სამართლიანი კოეფიციენტი = 1 / ალბათობა; თუ ის ზღვარზე დაბალია — ფსონი ზედმეტად აშკარაა
       else if (1 / it.p < minOdd) continue;

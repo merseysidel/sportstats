@@ -357,7 +357,8 @@ def fetch_coaches(docs, state):
     st = state.setdefault("coaches", {})
     teams = set()
     for doc in docs.values():
-        teams.update(doc["teams"].keys())
+        if doc.get("_group") in ("league", "euro"):   # თასების ქვედა დივიზიონის გუნდები არ გვჭირდება
+            teams.update(doc["teams"].keys())
     todo = [t for t in sorted(teams) if hours_since(st.get(t)) > 24 * 7]
     print(f"   მწვრთნელები: {len(teams)} გუნდი, განსაახლებელი {len(todo)}")
     for t in todo:

@@ -1,8 +1,8 @@
 // ===================== SportStats — ინტერფეისი =====================
-import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611251622';
-import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor } from './markets.js?v=202611251622';
-import { traits, patterns, keyAbsences, standings } from './insights.js?v=202611251622';
-import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611251622';
+import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611251707';
+import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor } from './markets.js?v=202611251707';
+import { traits, patterns, keyAbsences, standings, restInfo, motivation, coachInfo, scenarios } from './insights.js?v=202611251707';
+import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611251707';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -29,7 +29,7 @@ const ARCH = +new URLSearchParams(location.search).get('archive') || null; // �
 const BASE = ARCH ? `data/archive/${ARCH}/` : 'data/';
 const predCache = new Map();
 function pred(f) {
-  if (!predCache.has(f.i)) { const pr = predict(f); const mk = buildMarkets(pr); predCache.set(f.i, { pr, mk, picks: aiPicks(mk, MIN, 8, f) }); }
+  if (!predCache.has(f.i)) { const pr = predict(f); const mk = buildMarkets(pr); predCache.set(f.i, { pr, mk, picks: aiPicks(mk, MIN, 20, f) }); }
   return predCache.get(f.i);
 }
 
@@ -42,6 +42,7 @@ async function boot() {
   let state = {}; try { state = await j(BASE + 'state.json'); } catch (e) { }
   try { DB.h2h = await j('data/h2h.json'); } catch (e) { DB.h2h = {}; }
   try { DB.odds = ARCH ? {} : await j('data/odds.json'); } catch (e) { DB.odds = {}; }
+  try { DB.coaches = ARCH ? {} : await j('data/coaches.json'); } catch (e) { DB.coaches = {}; }
   const comps = {}, players = {}, inj = {};
   await Promise.all(cfg.competitions.map(async c => {
     try { comps[c.code] = await j(`${BASE}comp/${c.code}.json`); } catch (e) { }
@@ -134,6 +135,7 @@ document.addEventListener('click', e => {
   if (a === 'venue') { ST.venue = val; render(); }
   if (a === 'tab') { ST.tab[b.dataset.k] = val; render(); }
   if (a === 'mode') { ST.mode = val; render(); }
+  if (a === 'bb') { ST.bb = { start: $('#bbStart').value || ST.date, days: +$('#bbDays').value, n: +$('#bbN').value }; render(); setTimeout(() => $('#bb')?.scrollIntoView({ behavior: 'smooth' }), 50); return; }
   if (a === 'round') { ST.round[b.dataset.c] = +val; render(); }
   if (a === 'nextday') { ST.date = nearestDay(+val); render(); }
 });
@@ -165,12 +167,40 @@ function dateBar() {
     <button class="btn ghost" data-act="today">${ST.sim ? 'ბოლო ტური' : 'დღეს'}</button>
   </div>`;
 }
+// -------------------------------------------------- ფსონის ამწყობი
+function builder() {
+  const b = ST.bb || { start: ST.date, days: 1, n: 3 };
+  let h = `<div class="card builder" id="bb"><h3>🎟️ ფსონის ამწყობი</h3><div class="filters">
+    <label>საწყისი დღე<input type="date" id="bbStart" value="${b.start}" min="${ST.range?.[0] || ''}" max="${ST.range?.[1] || ''}"></label>
+    <label>დღეების რაოდენობა<select id="bbDays">${[1, 2, 3].map(d => `<option${d === b.days ? ' selected' : ''}>${d}</option>`).join('')}</select></label>
+    <label>ფსონი ბილეთში<select id="bbN">${[2, 3, 4, 5, 6, 7, 8].map(d => `<option${d === b.n ? ' selected' : ''}>${d}</option>`).join('')}</select></label>
+    <label>&nbsp;<button class="btn acc" data-act="bb">🤖 ააწყე ბილეთი</button></label></div>`;
+  if (!ST.bb) return h + `<div class="mut small" style="margin-top:8px">აირჩიე დღეები (მაქს. 3) და AI 3 ვარიანტს ააწყობს: საიმედო, ბალანსი და მაღალი კოეფიციენტი. თითო მატჩიდან მაქსიმუმ 1 ფსონი.</div></div>`;
+  const t0 = dayStart(b.start), t1 = t0 + b.days * 864e5;
+  const fx = DB.fixtures.filter(f => f.t >= t0 && f.t < t1);
+  const per = fx.map(f => ({ f, picks: pred(f).picks.map(p => ({ ...p, o: p.odd || p.est })) })).filter(x => x.picks.length);
+  const ticket = (title, desc, chooser, sorter) => {
+    const legs = per.map(x => { const c = chooser(x.picks); return c ? { f: x.f, p: c } : null; }).filter(Boolean).sort(sorter).slice(0, b.n);
+    if (legs.length < b.n) return `<div class="ticket"><h4>${title}</h4><div class="mut small">საკმარისი ფსონი ვერ მოიძებნა (${legs.length}/${b.n}).</div></div>`;
+    const P0 = legs.reduce((s, l) => s * l.p.p, 1), O = legs.reduce((s, l) => s * l.p.o, 1), est = legs.some(l => !l.p.odd);
+    const ch = legs.map(l => checkItem(l.f, l.p)), done = ch.every(c => c != null);
+    return `<div class="ticket"><h4>${title}</h4><small class="mut">${desc}</small>${legs.map((l, i) => `<a class="leg" href="#/m/${l.f.i}"><span>${dlabel(l.f.t)} ${hhmm(l.f.t)}<b>${esc(tn(l.f.h))} – ${esc(tn(l.f.a))}</b></span><span>${esc(pickName(l.p))}</span><span class="pct ${pcls(l.p.p)}">${P(l.p.p)}</span><span class="odd">${l.p.odd ? l.p.odd.toFixed(2) : '~' + l.p.o.toFixed(2)}</span><span>${ch[i] == null ? '' : ch[i] ? '✅' : '❌'}</span></a>`).join('')}
+      <div class="tsum"><span>ერთიანი ალბათობა <b>${P(P0)}</b></span><span>ჯამური კოეფ. <b>${est ? '~' : ''}${O.toFixed(2)}</b></span>${done ? `<span class="${ch.every(Boolean) ? 'okc' : 'noc'}"><b>${ch.every(Boolean) ? '✅ ბილეთი მოიგო' : '❌ ბილეთი წააგო'}</b></span>` : ''}</div></div>`;
+  };
+  h += `<div class="tickets">`;
+  h += ticket('🛡️ საიმედო', 'ყველაზე მაღალი ალბათობის ფსონები', ps => ps.reduce((a, c) => c.p > a.p ? c : a), (a, b) => b.p.p - a.p.p);
+  h += ticket('⚖️ ბალანსი', 'ალბათობა × კოეფიციენტი — საუკეთესო თანაფარდობა', ps => { const q = ps.filter(p => p.p >= 0.72); return q.length ? q.reduce((a, c) => c.p * c.o > a.p * a.o ? c : a) : null; }, (a, b) => b.p.p * b.p.o - a.p.p * a.p.o);
+  h += ticket('🚀 მაღალი კოეფიციენტი', 'ყველაზე მაღალი კოეფიციენტები 70%+ ალბათობით', ps => ps.reduce((a, c) => c.o > a.o ? c : a), (a, b) => b.p.o - a.p.o);
+  h += `</div><div class="mut small">ერთიანი ალბათობა = ფსონების ალბათობების ნამრავლი (მატჩები ერთმანეთზე დამოუკიდებლად ითვლება). „~“ — ბუკმეკერის ხაზი არ არის, ნაჩვენებია სამართლიანი კოეფიციენტი.</div>`;
+  return h + `</div>`;
+}
+
 function homeView() {
   const t0 = dayStart(ST.date), t1 = t0 + 864e5;
   const fx = DB.fixtures.filter(f => f.t >= t0 && f.t < t1);
   let h = `<div class="head"><h1>დღის მატჩები</h1>${seg('mode', [['list', 'მატჩები'], ['picks', 'AI ფსონები']], ST.mode)}</div>` + dateBar();
   if (ST.sim) h += `<div class="note">${ARCH ? '📁 არქივი' : '🧪 საცდელი რეჟიმი'}: ${DB.cfg.season}-${DB.cfg.season + 1} სეზონი. პროგნოზი ითვლება მხოლოდ მატჩამდე არსებული მონაცემებით, ამიტომ ✅/❌ რეალურ შედეგს უჩვენებს.</div>`;
-  if (!fx.length) return h + `<div class="empty">ამ დღეს ჩვენს ტურნირებში მატჩი არ არის. გამოიყენე ⏮ ⏭ უახლოესი სათამაშო დღისთვის.</div>`;
+  if (!fx.length) return h + `<div class="empty">ამ დღეს ჩვენს ტურნირებში მატჩი არ არის. გამოიყენე ⏮ ⏭ უახლოესი სათამაშო დღისთვის.</div>` + builder();
   if (ST.mode === 'picks') {
     const all = [];
     for (const f of fx) { const { pr, picks } = pred(f); for (const p of picks) all.push({ f, pr, p }); }
@@ -181,7 +211,7 @@ function homeView() {
       const c = checkItem(f, p);
       return `<a class="pickrow" href="#/m/${f.i}"><span class="tm">${hhmm(f.t)}</span><span class="pm">${esc(tn(f.h))} – ${esc(tn(f.a))}<small>${esc(compName(f.c))}</small></span>
         <span class="pk">${esc(pickName(p))}<small>${esc(p.group.replace(/\s*\(.*\)$/, ''))}</small></span><span class="pct ${pcls(p.p)}">${P(p.p)}</span><span class="odd">${p.odd ? p.odd.toFixed(2) : p.est ? '~' + p.est.toFixed(2) : '—'}</span>${c == null ? '<span class="ck"></span>' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅' : '❌'}</span>`}</a>`;
-    }).join('') + `</div>`;
+    }).join('') + `</div>` + builder();
   }
   const byComp = {};
   for (const f of fx) (byComp[f.c] ||= []).push(f);
@@ -191,7 +221,7 @@ function homeView() {
     for (const f of byComp[c]) h += matchRow(f);
     h += `</div>`;
   }
-  return h;
+  return h + builder();
 }
 
 // -------------------------------------------------- არქივი
@@ -268,6 +298,7 @@ function overview(f, pr, mk, picks) {
   h += `<div class="card"><h3>ძირითადი ალბათობები</h3><div class="kgrid">${kp.map(([l, p]) => `<div class="${pcls(p)}"><span>${l}</span><b>${P(p)}</b></div>`).join('')}</div>
     <div class="scores">${pr.scores.slice(0, 5).map(([s, p]) => `<span>${s} <b>${P(p)}</b></span>`).join('')}</div></div>`;
   h += `</div><div>`;
+  h += contextCard(f);
   // დაზიანებები
   for (const [tid, rows] of [[f.h, 'h'], [f.a, 'a']]) {
     const abs = keyAbsences(tid, f.t, f), all = DB.injuries.filter(r => r[3] === f.i && r[2] === tid);
@@ -287,9 +318,26 @@ function overview(f, pr, mk, picks) {
   // traits + patterns
   for (const [tid, ven] of [[f.h, 'home'], [f.a, 'away']]) {
     const tr = traits(tid, f.t), pt = patterns(tid, f.t, ven);
-    h += `<div class="card"><h3>${logo(tid)} ${esc(tn(tid))}</h3>${traitChips(tr)}${pt.length ? `<ul class="pat">${pt.map(p => `<li class="${p.tone}">${esc(p.txt)}</li>`).join('')}</ul>` : ''}</div>`;
+    const sc = scenarios(tid, f.t, ven);
+    h += `<div class="card"><h3>${logo(tid)} ${esc(tn(tid))}</h3>${traitChips(tr)}${pt.length ? `<ul class="pat">${pt.map(p => `<li class="${p.tone}">${esc(p.txt)}</li>`).join('')}</ul>` : ''}
+      ${sc.length ? `<details class="scen"><summary>🎬 სცენარები (${ven === 'home' ? 'შინ' : 'გასვლაზე'})</summary>${scenList(sc)}</details>` : ''}</div>`;
   }
   return h + `</div></div>`;
+}
+const scenList = sc => sc.map(x => `<div class="scn ${x.tone}"><b>${esc(x.title)}</b><span>${esc(x.text)}</span></div>`).join('');
+function contextCard(f) {
+  let h = `<div class="card"><h3>📋 მატჩის კონტექსტი</h3><table class="ctx"><thead><tr><th></th><th>${logo(f.h)} ${esc(tn(f.h))}</th><th>${logo(f.a)} ${esc(tn(f.a))}</th></tr></thead><tbody>`;
+  const R = [restInfo(f.h, f), restInfo(f.a, f)], M = [motivation(f.h, f), motivation(f.a, f)], C = [coachInfo(f.h, f.t), coachInfo(f.a, f.t)];
+  const restTxt = r => r.partial ? `<span class="mut">უცნობია</span><small>ამ გუნდის ლიგის მატჩები ჩვენს ბაზაში არ არის</small>` : r.prev ? `<b>${f1(r.days)} დღე</b><small>ბოლო: ${dlabel(r.prev.t)}, ${esc(tn(r.prev.h))} – ${esc(tn(r.prev.a))} · ${esc(compName(r.prev.c))}</small>` : '—';
+  h += `<tr><td>დასვენება</td>${R.map(restTxt).map(x => `<td>${x}</td>`).join('')}</tr>`;
+  h += `<tr><td>ბოლო 14 დღეში</td>${R.map(r => `<td>${r.partial ? '—' : r.last14 + ' მატჩი'}</td>`).join('')}</tr>`;
+  h += `<tr><td>შემდეგი მატჩი</td>${R.map(r => `<td>${r.next ? `${f1(r.nextDays)} დღეში<small>${esc(tn(r.next.h))} – ${esc(tn(r.next.a))} · ${esc(compName(r.next.c))}</small>` : '—'}</td>`).join('')}</tr>`;
+  h += `<tr><td>მოტივაცია</td>${M.map(m => `<td>${m ? `<span class="trait ${m.tone}">${esc(m.label)}</span>${m.lines.map(l => `<small>${esc(l)}</small>`).join('')}` : '—'}</td>`).join('')}</tr>`;
+  h += `<tr><td>მწვრთნელი</td>${C.map(c => `<td>${c ? `<b>${esc(c.name)}</b><small>${c.start ? 'დან ' + fmtDate(c.start) : ''}</small>${c.change ? `<small class="${c.change.ppg >= c.change.ppg0 ? 'okc' : 'noc'}">ახალი მწვრთნელით: ${c.change.n} მატჩი, ${c.change.w}-${c.change.d}-${c.change.l}, ${f1(c.change.ppg)} ქულა/მატჩი (მანამდე ${f1(c.change.ppg0)})</small>` : ''}` : '—'}</td>`).join('')}</tr>`;
+  h += `</tbody></table>`;
+  const tags = R.flatMap((r, i) => r.tags.map(t => ({ ...t, team: i ? f.a : f.h })));
+  if (tags.length) h += `<div class="chips" style="margin-top:8px">${tags.map(t => `<span class="trait ${t.tone}">${esc(tn(t.team))}: ${esc(t.t)}</span>`).join('')}</div>`;
+  return h + `<div class="mut small">ეს ინფორმაცია პროცენტებზე გავლენას არ ახდენს — მხოლოდ შენი გადაწყვეტილებისთვისაა.</div></div>`;
 }
 function explainPick(pr, p) {
   if (p.pl && p.fam !== 'ps') {
@@ -475,6 +523,10 @@ function teamView(tid) {
     h += `<div class="grid2"><div class="card"><h3>🏷️ Team Traits</h3>${traitChips(traits(tid, before))}</div>`;
     const pt = patterns(tid, before, v), abs = keyAbsences(tid, before);
     h += `<div class="card"><h3>🔎 AI მიგნებები</h3>${abs.map(a => `<div class="abs ${a.big ? 'big' : ''}">${a.big ? '⚠️ ' : ''}${esc(a.txt)}</div>`).join('')}${pt.length ? `<ul class="pat">${pt.map(p => `<li class="${p.tone}">${esc(p.txt)}</li>`).join('')}</ul>` : '<div class="mut small">მკაფიო პატერნი ჯერ ვერ მოიძებნა</div>'}</div></div>`;
+    const co = coachInfo(tid, before);
+    if (co) h += `<div class="card"><h3>👔 მწვრთნელი: ${esc(co.name)}</h3><p>${co.start ? `გუნდს წვრთნის ${fmtDate(co.start)}-დან.` : ''} ${co.change ? `<span class="${co.change.ppg >= co.change.ppg0 ? 'okc' : 'noc'}">ახალი მწვრთნელით: ${co.change.n} მატჩი (${co.change.w}-${co.change.d}-${co.change.l}), ${f1(co.change.ppg)} ქულა/მატჩი, გოლები ${f1(co.change.gf)}:${f1(co.change.ga)}</span> — მანამდე ${co.change.n0} მატჩი: ${f1(co.change.ppg0)} ქულა/მატჩი, გოლები ${f1(co.change.gf0)}:${f1(co.change.ga0)}.` : 'ამ სეზონის ყველა მატჩი ამ მწვრთნელით.'}</p></div>`;
+    const sc = scenarios(tid, before, v);
+    if (sc.length) h += `<div class="card"><h3>🎬 სცენარები</h3>${scenList(sc)}</div>`;
     h += `<div class="card"><h3>გოლების დრო</h3><div class="mins">${['0-15', '16-30', '31-45', '46-60', '61-75', '76-90'].map((l, i) => `<div><span>${l}</span><b class="g">${A.gForB[i]}</b><b class="c">${A.gAgB[i]}</b></div>`).join('')}</div><div class="mut small">მწვანე — გატანილი, წითელი — გაშვებული</div></div>`;
   }
   if (tab === 'pl') {

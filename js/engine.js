@@ -27,7 +27,7 @@ export function indexData(cfg, compDocs, playerDocs, injuryDocs) {
     }
     if (c.group === 'cup') doc.fixtures = doc.fixtures.filter(f => core.has(f.h) || core.has(f.a));
     for (const f of doc.fixtures) {
-      f.c = c.code; f.t = Date.parse(f.d);
+      f.c = c.code; f.t = Date.parse(f.d) - 5 * 60 * 1000; // 5 წუთით ადრე: 00:00-იანი მატჩი წინა დღეს ეკუთვნის (23:55)
       DB.fixtures.push(f); DB.byId[f.i] = f;
     }
   }

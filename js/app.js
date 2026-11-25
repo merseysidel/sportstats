@@ -9,19 +9,24 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 const f1 = x => x == null || isNaN(x) ? '—' : (Math.round(x * 10) / 10).toFixed(1);
 const P = x => x == null || isNaN(x) ? '—' : Math.round(x * 100) + '%';
 const MIN = 0.75; // AI ფსონების ზღვარი (70–74% ამოღებულია მირიანის გადაწყვეტილებით)
-const ST = { date: null, venue: 'all', tab: {}, mode: 'list' };
+const ST = { date: null, venue: 'all', tab: {}, mode: 'list', round: {} };
 const DAYS = ['კვი', 'ორშ', 'სამ', 'ოთხ', 'ხუთ', 'პარ', 'შაბ'];
 const MONTHS = ['იან', 'თებ', 'მარ', 'აპრ', 'მაი', 'ივნ', 'ივლ', 'აგვ', 'სექ', 'ოქტ', 'ნოე', 'დეკ'];
 
 const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-const dayStart = s => new Date(s + 'T00:00:00').getTime();
-const hhmm = t => new Date(t).toLocaleTimeString('ka-GE', { hour: '2-digit', minute: '2-digit', hour12: false });
-const dlabel = t => { const d = new Date(t); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; };
+// ყველა დრო — საქართველოს დროით (UTC+4, ზაფხულის დროის გარეშე), ნებისმიერ მოწყობილობაზე
+const TZ = 'Asia/Tbilisi';
+const tbIso = t => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(t));
+const dayStart = s => Date.parse(s + 'T00:00:00+04:00');
+const hhmm = t => new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: TZ });
+const dlabel = t => { const [y, m, d] = tbIso(t).split('-'); return `${+d} ${MONTHS[+m - 1]}`; };
 const logo = (id, cls = 'lg') => DB.teams[id]?.logo ? `<img class="${cls}" src="${esc(DB.teams[id].logo)}" alt="" loading="lazy">` : `<span class="${cls}"></span>`;
 const tlink = id => `<a href="#/t/${id}" class="tl">${logo(id)}<span>${esc(tn(id))}</span></a>`;
 const pcls = p => p >= 0.8 ? 'p80' : p >= MIN ? 'p70' : p >= 0.5 ? 'p50' : '';
 const compName = c => DB.comps[c]?.name || c;
 
+const ARCH = +new URLSearchParams(location.search).get('archive') || null; // არქივის სეზონი (მაგ. 2025)
+const BASE = ARCH ? `data/archive/${ARCH}/` : 'data/';
 const predCache = new Map();
 function pred(f) {
   if (!predCache.has(f.i)) { const pr = predict(f); const mk = buildMarkets(pr); predCache.set(f.i, { pr, mk, picks: aiPicks(mk, MIN) }); }
@@ -33,21 +38,28 @@ async function j(url) { const r = await fetch(url + '?v=' + Date.now()); if (!r.
 async function boot() {
   $('#view').innerHTML = '<div class="loading">მონაცემები იტვირთება…</div>';
   const cfg = await j('config.json');
-  let state = {}; try { state = await j('data/state.json'); } catch (e) { }
+  if (ARCH) cfg.season = ARCH;
+  let state = {}; try { state = await j(BASE + 'state.json'); } catch (e) { }
   try { DB.h2h = await j('data/h2h.json'); } catch (e) { DB.h2h = {}; }
   const comps = {}, players = {}, inj = {};
   await Promise.all(cfg.competitions.map(async c => {
-    try { comps[c.code] = await j(`data/comp/${c.code}.json`); } catch (e) { }
-    try { players[c.code] = await j(`data/players/${c.code}.json`); } catch (e) { }
-    try { inj[c.code] = await j(`data/injuries/${c.code}.json`); } catch (e) { }
+    try { comps[c.code] = await j(`${BASE}comp/${c.code}.json`); } catch (e) { }
+    try { players[c.code] = await j(`${BASE}players/${c.code}.json`); } catch (e) { }
+    try { inj[c.code] = await j(`${BASE}injuries/${c.code}.json`); } catch (e) { }
   }));
   indexData(cfg, comps, players, inj);
   DB.state = state;
   loadNumerology().then(() => { if (location.hash.includes('/m/') || location.hash.includes('/t/') || location.hash.includes('/p/')) render(); });
+  if (ARCH) {
+    document.body.classList.add('arch');
+    $('#archbar').innerHTML = `📁 არქივი: <b>${ARCH}-${ARCH + 1}</b> სეზონი <a class="btn sm" href="./?archive=${ARCH}#/">სეზონის მიმოხილვა</a><a class="btn sm" href="./#/archive">სხვა სეზონები</a><a class="btn sm" href="./#/">← მიმდინარე სეზონი</a>`;
+    document.querySelector('#nav a[data-r="home"]').setAttribute('href', './#/');
+  }
+  if (!DB.fixtures.length && location.hash.startsWith('#/archive')) { sidebar(); footer(); window.addEventListener('hashchange', render); render(); return; }
   if (!DB.fixtures.length) { $('#view').innerHTML = '<div class="empty">მონაცემები ჯერ არ არის. პირველი განახლება GitHub Actions-ში უნდა დასრულდეს.</div>'; return; }
   // ნაგულისხმევი თარიღი: დღეს, თუ სეზონის ფარგლებშია; თორემ ბოლო სათამაშო დღე
-  const today = iso(new Date()), first = DB.fixtures[0].d.slice(0, 10), last = DB.fixtures[DB.fixtures.length - 1].d.slice(0, 10);
-  ST.sim = !(today >= first && today <= last);
+  const today = tbIso(Date.now()), first = tbIso(DB.fixtures[0].t), last = tbIso(DB.fixtures[DB.fixtures.length - 1].t);
+  ST.sim = !!ARCH || !(today >= first && today <= last);
   ST.date = ST.sim ? lastMatchDay() : today;
   ST.range = [first, last];
   sidebar(); footer();
@@ -58,11 +70,11 @@ function lastMatchDay() {
   // ბოლო დღე, სადაც ≥6 მატჩია (უპირატესობა — დეტალური სტატებით)
   for (const needSt of [true, false]) {
     const cnt = {};
-    for (const f of DB.fixtures) if (isFin(f) && (!needSt || f.st)) { const d = f.d.slice(0, 10); cnt[d] = (cnt[d] || 0) + 1; }
+    for (const f of DB.fixtures) if (isFin(f) && (!needSt || f.st)) { const d = tbIso(f.t); cnt[d] = (cnt[d] || 0) + 1; }
     const days = Object.keys(cnt).sort();
     for (let i = days.length - 1; i >= 0; i--) if (cnt[days[i]] >= 6) return days[i];
   }
-  return iso(new Date());
+  return tbIso(Date.now());
 }
 
 function sidebar() {
@@ -78,7 +90,7 @@ function sidebar() {
 function footer() {
   const s = DB.state || {}, pg = s.progress;
   const upd = s.last_run ? new Date(s.last_run).toLocaleString('ka-GE', { dateStyle: 'short', timeStyle: 'short' }) : '—';
-  $('#foot').innerHTML = `<span>სეზონი ${DB.cfg.season}-${DB.cfg.season + 1}${ST.sim ? ' · <b class="sim">საცდელი რეჟიმი</b>' : ''}</span>
+  $('#foot').innerHTML = `<span>სეზონი ${DB.cfg.season}-${DB.cfg.season + 1}${ARCH ? ' · <b class="sim">არქივი</b>' : ST.sim ? ' · <b class="sim">საცდელი რეჟიმი</b>' : ''}</span>
     <span>ბოლო განახლება: ${upd}</span>${pg ? `<span>დეტალური სტატები: ${pg.detailed}/${pg.finished} მატჩი</span>` : ''}
     <span>ნუმეროლოგია: ${NUM.source === 'sheet' ? 'Google Sheet' : 'ჩაშენებული ასლი'}</span>
     <a class="btn sm" target="_blank" href="https://github.com/merseysidel/sportstats/actions/workflows/update.yml">⟳ განახლება</a>`;
@@ -98,29 +110,33 @@ function render() {
     else if (h[0] === 'scan') v.innerHTML = scanView();
     else if (h[0] === 'cmp') v.innerHTML = compareView(h[1], h[2]);
     else if (h[0] === 'acc') { v.innerHTML = accView(); runAccuracy(); }
-    else v.innerHTML = homeView();
+    else if (h[0] === 'archive') v.innerHTML = archiveList();
+    else v.innerHTML = ARCH ? archiveHome() + homeView() : homeView();
   } catch (e) { console.error(e); v.innerHTML = `<div class="empty">შეცდომა: ${esc(e.message)}</div>`; }
   window.scrollTo(0, 0);
 }
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const a = b.dataset.act, val = b.dataset.v;
-  if (a === 'day') { const d = new Date(ST.date + 'T12:00:00'); d.setDate(d.getDate() + (+val)); ST.date = iso(d); render(); }
-  if (a === 'home') { ST.date = ST.sim ? lastMatchDay() : iso(new Date()); ST.mode = 'list'; ST.tab = {}; location.hash = '#/'; render(); }
-  if (a === 'today') { ST.date = ST.sim ? lastMatchDay() : iso(new Date()); render(); }
+  if (a === 'day') { const d = new Date(ST.date + 'T12:00:00'); d.setDate(d.getDate() + (+val)); ST.date = iso(d); ST.round = {}; render(); }
+  if (a === 'home' && ARCH) { location.href = './#/'; return; }
+  if (a === 'home') { ST.date = ST.sim ? lastMatchDay() : tbIso(Date.now()); ST.mode = 'list'; ST.tab = {}; location.hash = '#/'; render(); }
+  if (a === 'today') { ST.date = ST.sim ? lastMatchDay() : tbIso(Date.now()); render(); }
   if (a === 'venue') { ST.venue = val; render(); }
   if (a === 'tab') { ST.tab[b.dataset.k] = val; render(); }
   if (a === 'mode') { ST.mode = val; render(); }
+  if (a === 'round') { ST.round[b.dataset.c] = +val; render(); }
   if (a === 'nextday') { ST.date = nearestDay(+val); render(); }
 });
 document.addEventListener('change', e => {
-  if (e.target.id === 'dpick' && e.target.value) { ST.date = e.target.value; render(); }
+  if (e.target.id === 'dpick' && e.target.value) { ST.date = e.target.value; ST.round = {}; render(); }
+  if (e.target.matches('.roundsel')) { ST.round[e.target.dataset.c] = +e.target.value; render(); }
   if (e.target.matches('.scanf')) { ST.scan = Object.fromEntries([...document.querySelectorAll('.scanf')].map(x => [x.name, x.value])); render(); }
   if (e.target.matches('.cmpf')) { const a = $('#cmpA').value, b = $('#cmpB').value; location.hash = `#/cmp/${a}/${b}`; }
 });
 function nearestDay(dir) {
   const t = dayStart(ST.date);
-  const list = DB.fixtures.map(f => f.d.slice(0, 10));
+  const list = DB.fixtures.map(f => tbIso(f.t));
   if (dir > 0) return list.find(d => dayStart(d) > t) || ST.date;
   return [...list].reverse().find(d => dayStart(d) < t) || ST.date;
 }
@@ -144,7 +160,7 @@ function homeView() {
   const t0 = dayStart(ST.date), t1 = t0 + 864e5;
   const fx = DB.fixtures.filter(f => f.t >= t0 && f.t < t1);
   let h = `<div class="head"><h1>დღის მატჩები</h1>${seg('mode', [['list', 'მატჩები'], ['picks', 'AI ფსონები']], ST.mode)}</div>` + dateBar();
-  if (ST.sim) h += `<div class="note">🧪 საცდელი რეჟიმი: ${DB.cfg.season}-${DB.cfg.season + 1} სეზონი. პროგნოზი ითვლება მხოლოდ მატჩამდე არსებული მონაცემებით, ამიტომ ✅/❌ რეალურ შედეგს უჩვენებს.</div>`;
+  if (ST.sim) h += `<div class="note">${ARCH ? '📁 არქივი' : '🧪 საცდელი რეჟიმი'}: ${DB.cfg.season}-${DB.cfg.season + 1} სეზონი. პროგნოზი ითვლება მხოლოდ მატჩამდე არსებული მონაცემებით, ამიტომ ✅/❌ რეალურ შედეგს უჩვენებს.</div>`;
   if (!fx.length) return h + `<div class="empty">ამ დღეს ჩვენს ტურნირებში მატჩი არ არის. გამოიყენე ⏮ ⏭ უახლოესი სათამაშო დღისთვის.</div>`;
   if (ST.mode === 'picks') {
     const all = [];
@@ -163,20 +179,36 @@ function homeView() {
   for (const c of DB.cfg.competitions.map(c => c.code)) {
     if (!byComp[c]) continue;
     h += `<div class="card"><a class="chead" href="#/c/${c}"><i class="flag">${esc(DB.comps[c].country.slice(0, 3))}</i>${esc(compName(c))}</a>`;
-    for (const f of byComp[c]) {
-      const { pr, picks } = pred(f), top = picks[0];
-      const fin = isFin(f), c1 = top ? checkItem(f, top) : null;
-      h += `<a class="mrow" href="#/m/${f.i}">
-        <span class="tm">${fin ? 'დასრ.' : hhmm(f.t)}</span>
-        <span class="teams"><span>${logo(f.h)}${esc(tn(f.h))}</span><span>${logo(f.a)}${esc(tn(f.a))}</span></span>
-        <span class="sc">${fin ? `<b>${f.g[0]}</b><b>${f.g[1]}</b>` : ''}</span>
-        <span class="odds"><i class="${pcls(pr.p1)}">1 <b>${P(pr.p1)}</b></i><i class="${pcls(pr.px)}">X <b>${P(pr.px)}</b></i><i class="${pcls(pr.p2)}">2 <b>${P(pr.p2)}</b></i></span>
-        <span class="best">${top ? `<span class="chip ${pcls(top.p)}">${esc(pickName(top))} · ${P(top.p)}</span>${c1 == null ? '' : c1 ? ' ✅' : ' ❌'}<small>${picks.length > 1 ? `+${picks.length - 1} ფსონი` : ''}</small>` : '<small class="mut">70%+ ფსონი არ არის</small>'}</span>
-      </a>`;
-    }
+    for (const f of byComp[c]) h += matchRow(f);
     h += `</div>`;
   }
   return h;
+}
+
+// -------------------------------------------------- არქივი
+function archiveList() {
+  const list = DB.cfg.archive || [];
+  return `<div class="head"><h1>📁 არქივი</h1></div><div class="note">აქ ინახება დასრულებული სეზონები სრული სტატისტიკით — ცხრილები და მატჩები ტურების მიხედვით, AI ფსონების შედეგებით.</div>
+    <div class="seasons">${list.map(y => `<a class="season" href="./?archive=${y}#/"><b>${y}-${y + 1}</b><span>სრული სეზონი · 16 ტურნირი</span></a>`).join('')}</div>`;
+}
+function archiveHome() {
+  const end = Infinity;
+  let h = `<div class="head"><h1>📁 სეზონი ${ARCH}-${ARCH + 1}</h1></div><div class="seasongrid">`;
+  for (const c of DB.cfg.competitions) {
+    const C = DB.comps[c.code]; if (!C) continue;
+    const fx = C.doc.fixtures.map(x => DB.byId[x.i]).filter(Boolean);
+    const fin = fx.filter(isFin);
+    let top = '';
+    if (c.group === 'league') {
+      const t = standings(c.code, end).slice(0, 3);
+      top = t.map((r, i) => `<div class="st3"><span>${i + 1}</span>${logo(r.t)}${esc(tn(r.t))}<b>${r.pts}</b></div>`).join('');
+    } else {
+      const fin2 = [...fin].sort((a, b) => b.t - a.t)[0];
+      if (fin2) { const w = fin2.w?.[0] ? fin2.h : fin2.w?.[1] ? fin2.a : (fin2.g[0] > fin2.g[1] ? fin2.h : fin2.a); top = `<div class="st3">🏆 ${logo(w)}${esc(tn(w))}</div><div class="mut small">${esc(roundName(fin2.r))}: ${esc(tn(fin2.h))} ${fin2.g[0]}–${fin2.g[1]} ${esc(tn(fin2.a))}</div>`; }
+    }
+    h += `<a class="card scard" href="#/c/${c.code}"><div class="chead"><i class="flag">${esc(c.country.slice(0, 3))}</i>${esc(c.name)}<span class="mut small" style="margin-left:auto">${fin.length} მატჩი</span></div>${top}</a>`;
+  }
+  return h + `</div><h2 class="sub">დღის მატჩები</h2>`;
 }
 
 // -------------------------------------------------- მატჩის გვერდი
@@ -185,7 +217,7 @@ function matchView(id) {
   const { pr, mk, picks } = pred(f);
   const fin = isFin(f), tab = ST.tab.m || 'ov';
   let h = `<div class="mhead">
-    <div class="mcomp"><a href="#/c/${f.c}">${esc(compName(f.c))}</a> · ${esc(f.r || '')} · ${dlabel(f.t)} ${hhmm(f.t)}${f.ref ? ` · მსაჯი: ${esc(f.ref)}` : ''}</div>
+    <div class="mcomp"><a href="#/c/${f.c}">${esc(compName(f.c))}</a> · ${esc(roundName(f.r))} · ${dlabel(f.t)} ${hhmm(f.t)}${f.ref ? ` · მსაჯი: ${esc(f.ref)}` : ''}</div>
     <div class="mteams"><a href="#/t/${f.h}">${logo(f.h, 'lgb')}<b>${esc(tn(f.h))}</b></a>
     <div class="mscore">${fin ? `${f.g[0]} – ${f.g[1]}${f.ht[0] != null ? `<small>(${f.ht[0]}–${f.ht[1]})</small>` : ''}` : '<span>VS</span>'}</div>
     <a href="#/t/${f.a}">${logo(f.a, 'lgb')}<b>${esc(tn(f.a))}</b></a></div>
@@ -301,7 +333,7 @@ function h2hData(f) {
   if (ext) return ext.filter(r => r[0] < f.d.slice(0, 10));
   // ჩვენი ბაზიდან (მიმდინარე სეზონი)
   return DB.fixtures.filter(x => isFin(x) && x.t < f.t && ((x.h === f.h && x.a === f.a) || (x.h === f.a && x.a === f.h)))
-    .map(x => [x.d.slice(0, 10), x.h, x.a, x.g[0], x.g[1], compName(x.c), tn(x.h), tn(x.a), x.ht[0], x.ht[1]]).reverse();
+    .map(x => [x.d.slice(0, 10), x.h, x.a, x.g[0], x.g[1], compName(x.c), tn(x.h), tn(x.a), x.ht[0], x.ht[1], null, null, DB.comps[x.c].group === 'cup' ? 1 : 0]).reverse();
 }
 function h2hSummary(f, list) {
   const n = list.length; if (!n) return null;
@@ -320,7 +352,7 @@ function h2h(f) {
   if (s) h += `<div class="kgrid">
     <div><span>მატჩი</span><b>${s.n}</b></div><div><span>${esc(tn(f.h))} მოიგო</span><b>${s.w}</b></div><div><span>ფრე</span><b>${s.d}</b></div><div><span>${esc(tn(f.a))} მოიგო</span><b>${s.l}</b></div>
     <div><span>გოლები/მატჩი</span><b>${f1(s.avg)}</b></div><div><span>მეტი 2.5</span><b>${P(s.o25)}</b></div><div><span>ორივე იტანს</span><b>${P(s.btts)}</b></div></div><div style="height:10px"></div>`;
-  h += list.length ? `<table class="tbl"><thead><tr><th>თარიღი</th><th>მატჩი</th><th>ანგარიში</th><th>ტაიმი</th><th>ტურნირი</th></tr></thead><tbody>${list.map(r => `<tr><td>${fmtDate(r[0])}</td><td>${esc(r[6])} – ${esc(r[7])}</td><td><b>${r[3]}–${r[4]}</b></td><td class="mut">${r[8] != null ? `${r[8]}–${r[9]}` : ''}</td><td class="mut">${esc(r[5])}</td></tr>`).join('')}</tbody></table>` : '<div class="mut small">ერთმანეთს ჯერ არ შეხვედრიან.</div>';
+  h += list.length ? `<table class="tbl"><thead><tr><th>თარიღი</th><th>მატჩი</th><th>ანგარიში</th><th>ტაიმი</th><th>ტურნირი <span class="mut">(🏆 = თასი)</span></th></tr></thead><tbody>${list.map(r => `<tr><td>${fmtDate(r[0])}</td><td>${esc(r[6])} – ${esc(r[7])}</td><td><b>${r[3]}–${r[4]}</b></td><td class="mut">${r[8] != null ? `${r[8]}–${r[9]}` : ''}</td><td class="mut">${r[11] ? `<img class="lg" src="${esc(r[11])}" alt="" loading="lazy"> ` : ''}${r[12] ? '<span class="cup" title="თასის მატჩი">🏆</span> ' : ''}${esc(r[5])}</td></tr>`).join('')}</tbody></table>` : '<div class="mut small">ერთმანეთს ჯერ არ შეხვედრიან.</div>';
   if (!ext) h += `<div class="note">${DB.cfg.h2h_years || 15}-წლიანი H2H ავტომატურად ჩაიტვირთება მატჩამდე ${DB.cfg.h2h_days_ahead || 7} დღით ადრე.</div>`;
   return h + `</div>`;
 }
@@ -348,29 +380,71 @@ function numerologyMatch(f) {
   return h + `</div>`;
 }
 
-// -------------------------------------------------- ტურნირი
+// -------------------------------------------------- ტურნირი (ტურების მიხედვით)
+const RN = { 'Round of 32': '1/16 ფინალი', 'Round of 16': '1/8 ფინალი', 'Quarter-finals': '1/4 ფინალი', 'Semi-finals': '1/2 ფინალი', 'Final': 'ფინალი',
+  'Knockout Round Play-offs': 'პლეი-ოფი', 'Play-offs': 'პლეი-ოფი', '1st Qualifying Round': '1-ლი საკვალიფიკაციო', '2nd Qualifying Round': 'მე-2 საკვალიფიკაციო', '3rd Qualifying Round': 'მე-3 საკვალიფიკაციო' };
+function roundName(r) {
+  if (!r) return '—';
+  let m = r.match(/^Regular Season - (\d+)$/); if (m) return `ტური ${m[1]}`;
+  m = r.match(/^League Stage - (\d+)$/); if (m) return `ლიგის ფაზა · ტური ${m[1]}`;
+  m = r.match(/^Group (\w) - (\d+)$/); if (m) return `ჯგუფი ${m[1]} · ტური ${m[2]}`;
+  m = r.match(/^(\d+)(st|nd|rd|th) Round$/); if (m) return `${m[1]}-ე რაუნდი`;
+  return RN[r] || r;
+}
+function compRounds(code) {
+  const idx = {}, rounds = [];
+  for (const x of DB.comps[code].doc.fixtures) { const f = DB.byId[x.i]; if (!f) continue; const r = f.r || '—'; if (!idx[r]) { idx[r] = []; rounds.push(r); } idx[r].push(f); }
+  // რიგი: ტურის ნომრით (გადადებული მატჩი რიგს არ არღვევს), სხვა შემთხვევაში — მედიანური თარიღით
+  const med = r => { const t = idx[r].map(f => f.t).sort((a, b) => a - b); return t[Math.floor(t.length / 2)]; };
+  const num = r => { const m = /(Regular Season|League Stage) - (\d+)$/.exec(r); return m ? +m[2] : null; };
+  rounds.sort((a, b) => { const na = num(a), nb = num(b); if (na != null && nb != null && /League Stage/.test(a) === /League Stage/.test(b)) return na - nb; return med(a) - med(b); });
+  return { rounds, idx };
+}
+function matchRow(f) {
+  const { pr, picks } = pred(f), top = picks[0];
+  const fin = isFin(f), c1 = top ? checkItem(f, top) : null;
+  return `<a class="mrow" href="#/m/${f.i}">
+    <span class="tm">${fin ? dlabel(f.t) : hhmm(f.t)}</span>
+    <span class="teams"><span>${logo(f.h)}${esc(tn(f.h))}</span><span>${logo(f.a)}${esc(tn(f.a))}</span></span>
+    <span class="sc">${fin ? `<b>${f.g[0]}</b><b>${f.g[1]}</b>` : ''}</span>
+    <span class="odds"><i class="${pcls(pr.p1)}">1 <b>${P(pr.p1)}</b></i><i class="${pcls(pr.px)}">X <b>${P(pr.px)}</b></i><i class="${pcls(pr.p2)}">2 <b>${P(pr.p2)}</b></i></span>
+    <span class="best">${top ? `<span class="chip ${pcls(top.p)}">${esc(pickName(top))} · ${P(top.p)}</span>${c1 == null ? '' : c1 ? ' ✅' : ' ❌'}<small>${picks.length > 1 ? `+${picks.length - 1} ფსონი` : ''}</small>` : `<small class="mut">${Math.round(MIN * 100)}%+ ფსონი არ არის</small>`}</span>
+  </a>`;
+}
 function compView(code) {
   const C = DB.comps[code]; if (!C) return '<div class="empty">ტურნირი ვერ მოიძებნა</div>';
-  const before = dayStart(ST.date) + 864e5, tab = ST.tab.c || 'tbl';
-  let h = `<div class="head"><h1><i class="flag">${esc(C.country.slice(0, 3))}</i>${esc(C.name)}</h1></div>` + dateBar();
+  const tab = ST.tab.c || 'tbl';
   const isLeague = C.group === 'league', isEuro = C.group === 'euro';
-  h += tabs('c', [['tbl', isLeague || isEuro ? 'ცხრილი' : 'გუნდები'], ['fx', 'მატჩები'], ['stat', 'სტატისტიკა']], tab);
+  const { rounds, idx } = compRounds(code);
+  ST.round ||= {};
+  // ნაგულისხმევი ტური: ბოლო ტური, რომელიც არჩეულ თარიღამდე დაიწყო
+  if (ST.round[code] == null || ST.round[code] >= rounds.length) {
+    const end = dayStart(ST.date) + 864e5; let k = 0;
+    rounds.forEach((r, i) => { if (Math.min(...idx[r].map(f => f.t)) < end) k = i; });
+    ST.round[code] = k;
+  }
+  const ri = ST.round[code], rname = rounds[ri], rfx = idx[rname] || [];
+  const roundEnd = Math.max(...rfx.map(f => f.t)) + 1;
+  let h = `<div class="head"><h1><i class="flag">${esc(C.country.slice(0, 3))}</i>${esc(C.name)}</h1></div>`;
+  h += `<div class="datebar"><button class="btn" data-act="round" data-c="${code}" data-v="${ri - 1}" ${ri <= 0 ? 'disabled' : ''}>◀</button>
+    <select class="roundsel btn" data-c="${code}">${rounds.map((r, i) => `<option value="${i}"${i === ri ? ' selected' : ''}>${esc(roundName(r))}</option>`).join('')}</select>
+    <button class="btn" data-act="round" data-c="${code}" data-v="${ri + 1}" ${ri >= rounds.length - 1 ? 'disabled' : ''}>▶</button>
+    <span class="mut small">${dlabel(Math.min(...rfx.map(f => f.t)))} – ${dlabel(roundEnd - 1)}</span></div>`;
+  h += tabs('c', [['tbl', isLeague || isEuro ? 'ცხრილი' : 'გუნდები'], ['fx', 'ტურის მატჩები'], ['stat', 'სტატისტიკა']], tab);
   if (tab === 'tbl') {
-    const rf = isEuro ? (r => /League Stage/i.test(r || '')) : null;
-    const tbl = standings(code, before, rf).filter(r => r.p > 0 || isLeague);
+    // ცხრილი ზუსტად არჩეული ტურის ჩათვლით (გადადებული მატჩები თავის ტურს ეკუთვნის)
+    const rpos = Object.fromEntries(rounds.map((r, i) => [r, i]));
+    const rf = r => rpos[r || '—'] <= ri && (!isEuro || /League Stage/i.test(r || ''));
+    const tbl = standings(code, Infinity, rf).filter(r => r.p > 0 || isLeague);
     h += `<div class="card"><table class="tbl std"><thead><tr><th>#</th><th>გუნდი</th><th>თ</th><th>მ</th><th>ფ</th><th>წ</th><th>გოლები</th><th>სხვ.</th><th>ქ</th><th>ფორმა</th></tr></thead><tbody>${tbl.map((r, i) => `<tr><td>${i + 1}</td><td>${tlink(r.t)}</td><td>${r.p}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td><td>${r.gf}:${r.ga}</td><td>${r.gf - r.ga}</td><td><b>${r.pts}</b></td><td>${form(r.form.slice(-5))}</td></tr>`).join('')}</tbody></table>
-    <div class="mut small">ცხრილი არჩეული თარიღის მდგომარეობით.</div></div>`;
+    <div class="mut small">ცხრილი „${esc(roundName(rname))}“-ის შემდეგ.</div></div>`;
   }
-  if (tab === 'fx') {
-    const fx = C.doc.fixtures.map(x => DB.byId[x.i]);
-    const rounds = []; const idx = {};
-    for (const f of fx) { const r = f.r || '—'; if (!idx[r]) { idx[r] = []; rounds.push(r); } idx[r].push(f); }
-    // არჩეულ თარიღთან ყველაზე ახლოს მყოფი ტური ზემოთ
-    const near = rounds.map(r => [r, Math.min(...idx[r].map(f => Math.abs(f.t - before)))]).sort((a, b) => a[1] - b[1]).slice(0, 4).map(x => x[0]);
-    const order = [...near, ...rounds.filter(r => !near.includes(r)).reverse()];
-    h += order.slice(0, 12).map(r => `<div class="card"><div class="chead">${esc(r)}</div>${idx[r].map(f => `<a class="mrow sm" href="#/m/${f.i}"><span class="tm">${dlabel(f.t)}</span><span class="teams"><span>${logo(f.h)}${esc(tn(f.h))}</span><span>${logo(f.a)}${esc(tn(f.a))}</span></span><span class="sc">${isFin(f) ? `<b>${f.g[0]}</b><b>${f.g[1]}</b>` : `<small>${hhmm(f.t)}</small>`}</span></a>`).join('')}</div>`).join('');
+  if (tab === 'tbl' || tab === 'fx') {
+    const fin = rfx.filter(f => isFin(f));
+    const hits = fin.flatMap(f => pred(f).picks.map(p => checkItem(f, p))).filter(x => x != null);
+    h += `<div class="card"><div class="chead">${esc(roundName(rname))}${hits.length ? `<span class="mut small" style="margin-left:auto">AI ფსონები: ${hits.filter(Boolean).length}/${hits.length} (${P(hits.filter(Boolean).length / hits.length)})</span>` : ''}</div>${rfx.map(matchRow).join('')}</div>`;
   }
-  if (tab === 'stat') h += scanTable({ comp: code, venue: ST.venue, metric: 'o25' }, true);
+  if (tab === 'stat') h += scanTable({ comp: code, venue: ST.venue, metric: (ST.scan && ST.scan.metric) || 'o25', _before: roundEnd }, true);
   return h;
 }
 
@@ -445,7 +519,7 @@ function scanView() {
   </div>` + scanTable(s);
 }
 function scanTable(s, compact) {
-  const before = dayStart(ST.date) + 864e5;
+  const before = s._before || dayStart(ST.date) + 864e5;
   const [key, label, fm] = SCAN.find(x => x[0] === s.metric) || SCAN[0];
   let teams;
   if (s.comp === 'all') teams = Object.keys(DB.teams);

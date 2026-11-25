@@ -100,3 +100,11 @@ b.dg,b.yr{padding:1px 6px}.num tr.lead td{font-weight:600}
   .pickrow{grid-template-columns:42px 1fr 52px 24px}.pickrow .pk{grid-column:2/3}.pickrow .pm{grid-column:2/-1}
   .mteams a{font-size:13px}.lgb{width:42px;height:42px}.mscore{font-size:26px}
 }
+
+#archbar:empty{display:none}#archbar{background:#2a2110;border-bottom:1px solid #4a3a15;color:#ffe2a8;padding:8px 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.seasons{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}.season{background:var(--p1);border-radius:var(--rad);padding:22px;border:1px solid var(--ln)}.season:hover{border-color:var(--ac)}.season b{font-size:24px;display:block}.season span{color:var(--mu)}
+.seasongrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:12px}.scard{margin:0}.scard:hover{background:var(--p2)}
+.st3{display:flex;align-items:center;gap:8px;padding:3px 0}.st3 span{color:var(--mu);width:14px}.st3 b{margin-left:auto}
+h2.sub{font-size:17px;margin:8px 0 10px}
+.cup{font-size:13px}
+select.roundsel{min-width:200px}

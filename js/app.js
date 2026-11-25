@@ -1,8 +1,8 @@
 // ===================== SportStats — ინტერფეისი =====================
-import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js';
-import { buildMarkets, aiPicks, explain, checkItem, tn, pickName } from './markets.js';
-import { traits, patterns, keyAbsences, standings } from './insights.js';
-import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js';
+import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611251608';
+import { buildMarkets, aiPicks, explain, checkItem, tn, pickName } from './markets.js?v=202611251608';
+import { traits, patterns, keyAbsences, standings } from './insights.js?v=202611251608';
+import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611251608';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -47,6 +47,8 @@ async function boot() {
     try { players[c.code] = await j(`${BASE}players/${c.code}.json`); } catch (e) { }
     try { inj[c.code] = await j(`${BASE}injuries/${c.code}.json`); } catch (e) { }
   }));
+  // არქივი: მხოლოდ ამ სეზონის მატჩები (1 ივლისი – 11 ივლისი, მსოფლიო ჩემპიონატამდე)
+  if (ARCH) for (const d of Object.values(comps)) d.fixtures = d.fixtures.filter(f => f.d >= `${ARCH}-07-01` && f.d < `${ARCH + 1}-07-12`);
   indexData(cfg, comps, players, inj);
   DB.state = state;
   loadNumerology().then(() => { if (location.hash.includes('/m/') || location.hash.includes('/t/') || location.hash.includes('/p/')) render(); });
@@ -97,7 +99,13 @@ function footer() {
 }
 
 // -------------------------------------------------- როუტერი
+function clampDate() {
+  if (!ST.range || !ST.date) return;
+  if (ST.date < ST.range[0]) ST.date = ST.range[0];
+  if (ST.date > ST.range[1]) ST.date = ST.range[1];
+}
 function render() {
+  clampDate();
   const h = location.hash.replace(/^#\/?/, '').split('/');
   document.querySelectorAll('#side a').forEach(a => a.classList.toggle('on', h[0] === 'c' && a.dataset.c === h[1]));
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.r === (h[0] || 'home')));
@@ -150,7 +158,7 @@ function dateBar() {
   return `<div class="datebar">
     <button class="btn" data-act="nextday" data-v="-1" title="წინა სათამაშო დღე">⏮</button>
     <button class="btn" data-act="day" data-v="-1">◀</button>
-    <label class="dlab"><b>${DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}</b><input id="dpick" type="date" value="${ST.date}"></label>
+    <label class="dlab"><b>${DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}</b><input id="dpick" type="date" value="${ST.date}" min="${ST.range?.[0] || ''}" max="${ST.range?.[1] || ''}"></label>
     <button class="btn" data-act="day" data-v="1">▶</button>
     <button class="btn" data-act="nextday" data-v="1" title="შემდეგი სათამაშო დღე">⏭</button>
     <button class="btn ghost" data-act="today">${ST.sim ? 'ბოლო ტური' : 'დღეს'}</button>

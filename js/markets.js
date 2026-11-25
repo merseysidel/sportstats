@@ -1,5 +1,5 @@
 // ===================== ფსონების კატალოგი + AI ფსონები (შაბლონური ტექსტით) =====================
-import { DB, S, scorerProbs } from './engine.js?v=202611251616';
+import { DB, S, scorerProbs } from './engine.js?v=202611251622';
 
 const fmt1 = x => x == null ? '—' : (Math.round(x * 10) / 10).toString();
 export const tn = id => DB.teams[id]?.name || '#' + id;
@@ -195,9 +195,9 @@ const NO_PICK = new Set(['cs', 'exg', 'htft', 'hh', 'oe', 'bttso', 'poss', 'h2r'
 export function aiPicks(mk, min = 0.7, max = 8, f = null) {
   const all = [...mk.R, ...mk.ST, ...mk.OT].flatMap(gr => gr.items.map(it => ({ ...it, group: gr.title })));
   const best = {};
-  const minOdd = DB.cfg?.min_odds || 1.25;
+  const minOdd = DB.cfg?.min_odds || 1.02;
   for (const it of all) {
-    if (it.p < min || NO_PICK.has(it.fam) || it.p > 0.95) continue;
+    if (it.p < min || NO_PICK.has(it.fam) || it.p > 0.98) continue;
     if (f) {
       const o = oddsFor(f, it);
       if (o && o.absent) continue;                 // ბუკმეკერი ამ ხაზს არც კი სთავაზობს

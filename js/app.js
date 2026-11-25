@@ -1,14 +1,14 @@
 // ===================== SportStats — ინტერფეისი =====================
-import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611251616';
-import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor } from './markets.js?v=202611251616';
-import { traits, patterns, keyAbsences, standings } from './insights.js?v=202611251616';
-import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611251616';
+import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611251622';
+import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor } from './markets.js?v=202611251622';
+import { traits, patterns, keyAbsences, standings } from './insights.js?v=202611251622';
+import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611251622';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const f1 = x => x == null || isNaN(x) ? '—' : (Math.round(x * 10) / 10).toFixed(1);
 const P = x => x == null || isNaN(x) ? '—' : Math.round(x * 100) + '%';
-const MIN = 0.75; // AI ფსონების ზღვარი (70–74% ამოღებულია მირიანის გადაწყვეტილებით)
+const MIN = 0.70; // AI ფსონების ზღვარი
 const ST = { date: null, venue: 'all', tab: {}, mode: 'list', round: {} };
 const DAYS = ['კვი', 'ორშ', 'სამ', 'ოთხ', 'ხუთ', 'პარ', 'შაბ'];
 const MONTHS = ['იან', 'თებ', 'მარ', 'აპრ', 'მაი', 'ივნ', 'ივლ', 'აგვ', 'სექ', 'ოქტ', 'ნოე', 'დეკ'];

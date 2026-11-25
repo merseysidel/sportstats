@@ -8,7 +8,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const f1 = x => x == null || isNaN(x) ? '—' : (Math.round(x * 10) / 10).toFixed(1);
 const P = x => x == null || isNaN(x) ? '—' : Math.round(x * 100) + '%';
-const MIN = 0.7;
+const MIN = 0.75; // AI ფსონების ზღვარი (70–74% ამოღებულია მირიანის გადაწყვეტილებით)
 const ST = { date: null, venue: 'all', tab: {}, mode: 'list' };
 const DAYS = ['კვი', 'ორშ', 'სამ', 'ოთხ', 'ხუთ', 'პარ', 'შაბ'];
 const MONTHS = ['იან', 'თებ', 'მარ', 'აპრ', 'მაი', 'ივნ', 'ივლ', 'აგვ', 'სექ', 'ოქტ', 'ნოე', 'დეკ'];
@@ -105,6 +105,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const a = b.dataset.act, val = b.dataset.v;
   if (a === 'day') { const d = new Date(ST.date + 'T12:00:00'); d.setDate(d.getDate() + (+val)); ST.date = iso(d); render(); }
+  if (a === 'home') { ST.date = ST.sim ? lastMatchDay() : iso(new Date()); ST.mode = 'list'; ST.tab = {}; location.hash = '#/'; render(); }
   if (a === 'today') { ST.date = ST.sim ? lastMatchDay() : iso(new Date()); render(); }
   if (a === 'venue') { ST.venue = val; render(); }
   if (a === 'tab') { ST.tab[b.dataset.k] = val; render(); }
@@ -142,7 +143,7 @@ function homeView() {
   const t0 = dayStart(ST.date), t1 = t0 + 864e5;
   const fx = DB.fixtures.filter(f => f.t >= t0 && f.t < t1);
   let h = `<div class="head"><h1>დღის მატჩები</h1>${seg('mode', [['list', 'მატჩები'], ['picks', 'AI ფსონები']], ST.mode)}</div>` + dateBar();
-  if (ST.sim) h += `<div class="note">🧪 საცდელი რეჟიმი: ${DB.cfg.season}/${String(DB.cfg.season + 1).slice(2)} სეზონი. პროგნოზი ითვლება მხოლოდ მატჩამდე არსებული მონაცემებით, ამიტომ ✅/❌ რეალურ შედეგს უჩვენებს.</div>`;
+  if (ST.sim) h += `<div class="note">🧪 საცდელი რეჟიმი: ${DB.cfg.season}/${String(DB.cfg.season + 1).slice(2)} სეზონი (აგვისტო ${DB.cfg.season} – მაისი ${DB.cfg.season + 1}). პროგნოზი ითვლება მხოლოდ მატჩამდე არსებული მონაცემებით, ამიტომ ✅/❌ რეალურ შედეგს უჩვენებს.</div>`;
   if (!fx.length) return h + `<div class="empty">ამ დღეს ჩვენს ტურნირებში მატჩი არ არის. გამოიყენე ⏮ ⏭ უახლოესი სათამაშო დღისთვის.</div>`;
   if (ST.mode === 'picks') {
     const all = [];
@@ -456,17 +457,19 @@ async function runAccuracy() {
   for (let i = 0; i < fx.length; i++) {
     if (job !== accJob) return;
     const f = fx[i];
-    const { pr, picks } = pred(f);
+    const { pr, mk } = pred(f);
+    const picks = aiPicks(mk, 0.7, 99);
     const g = f.g, res = g[0] > g[1] ? 0 : g[0] === g[1] ? 1 : 2, pp = [pr.p1, pr.px, pr.p2];
     main.n++; if (pp.indexOf(Math.max(...pp)) === res) main.top1x2++;
     if ((pr.over(pr.tot, 2.5) >= 0.5) === (g[0] + g[1] > 2.5)) main.o25++;
     const pb = (1 - pr.hF[0]) * (1 - pr.aF[0]); if ((pb >= 0.5) === (g[0] > 0 && g[1] > 0)) main.btts++;
     for (const p of picks) {
       const c = checkItem(f, p); if (c == null) continue;
-      const k = p.group.replace(/\s*\(.*\)$/, '').replace(/^.* — /, 'გუნდის — ');
-      (fam[k] ||= [0, 0]); fam[k][0] += c; fam[k][1]++;
-      const b = p.p >= 0.85 ? '85%+' : p.p >= 0.8 ? '80–85%' : p.p >= 0.75 ? '75–80%' : '70–75%';
+      const b = p.p >= 0.9 ? '90%+' : p.p >= 0.85 ? '85–90%' : p.p >= 0.8 ? '80–85%' : p.p >= 0.75 ? '75–80%' : '70–75%';
       (byP[b] ||= [0, 0]); byP[b][0] += c; byP[b][1]++;
+      if (p.p < MIN) continue; // ქვემოთ — მხოლოდ საიტზე ნაჩვენები ფსონები
+      const k0 = p.group.replace(/\s*\(.*\)$/, '').replace(/^.* — /, 'გუნდის — ');
+      (fam[k0] ||= [0, 0]); fam[k0][0] += c; fam[k0][1]++;
       (byComp[f.c] ||= [0, 0]); byComp[f.c][0] += c; byComp[f.c][1]++;
     }
     if (i % 25 === 0) { const e = $('#accp'); if (e) e.textContent = Math.round(i / fx.length * 100) + '%'; await new Promise(r => setTimeout(r, 0)); }
@@ -475,7 +478,7 @@ async function runAccuracy() {
   const tot = Object.values(fam).reduce((s, x) => [s[0] + x[0], s[1] + x[1]], [0, 0]);
   const row = ([k, [a, n]]) => `<tr><td>${esc(k)}</td><td>${n}</td><td>${a}</td><td><b class="${a / n >= 0.7 ? 'okc' : a / n < 0.6 ? 'noc' : ''}">${P(a / n)}</b></td></tr>`;
   $('#acc').innerHTML = `<div class="kpis"><div><b>${main.n}</b><span>შემოწმებული მატჩი</span></div><div><b>${P(tot[0] / tot[1])}</b><span>AI ფსონები (${tot[1]})</span></div><div><b>${P(main.top1x2 / main.n)}</b><span>1X2 ფავორიტი</span></div><div><b>${P(main.o25 / main.n)}</b><span>მეტი/ნაკლები 2.5</span></div><div><b>${P(main.btts / main.n)}</b><span>BTTS</span></div></div>
-    <div class="grid2"><div><h3>ალბათობის მიხედვით</h3><table class="tbl"><thead><tr><th>დიაპაზონი</th><th>ფსონი</th><th>გამართლდა</th><th>%</th></tr></thead><tbody>${['70–75%', '75–80%', '80–85%', '85%+'].filter(k => byP[k]).map(k => row([k, byP[k]])).join('')}</tbody></table>
+    <div class="grid2"><div><h3>ალბათობის მიხედვით</h3><table class="tbl"><thead><tr><th>დიაპაზონი</th><th>ფსონი</th><th>გამართლდა</th><th>%</th></tr></thead><tbody>${['70–75%', '75–80%', '80–85%', '85–90%', '90%+'].filter(k => byP[k]).map(k => row([k + (parseInt(k) < MIN * 100 ? ' (არ ჩანს)' : ''), byP[k]])).join('')}</tbody></table>
     <h3>ტურნირების მიხედვით</h3><table class="tbl"><thead><tr><th>ტურნირი</th><th>ფსონი</th><th>გამართლდა</th><th>%</th></tr></thead><tbody>${Object.entries(byComp).map(([k, v]) => row([compName(k), v])).join('')}</tbody></table></div>
     <div><h3>ბაზრების მიხედვით</h3><table class="tbl"><thead><tr><th>ბაზარი</th><th>ფსონი</th><th>გამართლდა</th><th>%</th></tr></thead><tbody>${Object.entries(fam).sort((a, b) => b[1][1] - a[1][1]).map(row).join('')}</tbody></table></div></div>
     <div class="mut small">კარგი მოდელისთვის „70–75%“ დიაპაზონი დაახლოებით 70–75%-ით უნდა მართლდებოდეს. თუ ნაკლებია — მოდელი ზედმეტად თავდაჯერებულია და ვასწორებთ.</div>`;

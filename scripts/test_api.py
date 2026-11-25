@@ -40,6 +40,7 @@ if lg:
     print(f"   სეზონი: {season} ({s.get('start')} → {s.get('end')})")
     print(f"   coverage: {json.dumps(cov, ensure_ascii=False)}")
 
+season = 2024
 line(f"3. მატჩები, სეზონი {season}")
 fx = get("fixtures", league=PL, season=season)
 games = fx.get("response", [])

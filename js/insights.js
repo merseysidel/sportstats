@@ -1,6 +1,6 @@
 // ===================== Team Traits + AI მიგნებები =====================
-import { DB, teamRows, aggregate, playerLines, playerTotals, injuriesNear, S } from './engine.js?v=202611251707';
-import { tn } from './markets.js?v=202611251707';
+import { DB, teamRows, aggregate, playerLines, playerTotals, injuriesNear, S } from './engine.js?v=202611251715';
+import { tn } from './markets.js?v=202611251715';
 
 const f1 = x => x == null ? '—' : (Math.round(x * 10) / 10).toString();
 const P = x => Math.round(x * 100) + '%';
@@ -162,10 +162,11 @@ export function restInfo(tid, f) {
   const last14 = list.filter(x => x.t < f.t && x.t >= f.t - 14 * 864e5).length;
   const days = prev ? (f.t - prev.t) / 864e5 : null, nextDays = next ? (next.t - f.t) / 864e5 : null;
   const tags = [];
-  if (days != null && days < 3.6) tags.push({ t: `მხოლოდ ${Math.round(days * 10) / 10} დღე დასვენება`, tone: 'bad' });
-  else if (days != null && days >= 6.5) tags.push({ t: 'კარგად დასვენებული', tone: 'good' });
+  // < 3 დღე — გაფრთხილება; 3–6 — ნორმა (არაფერს ვწერთ); 6+ — კარგად დასვენებული
+  if (days != null && days < 3) tags.push({ t: `მხოლოდ ${Math.round(days * 10) / 10} დღე დასვენება`, tone: 'bad' });
+  else if (days != null && days >= 6) tags.push({ t: 'კარგად დასვენებული', tone: 'good' });
   if (last14 >= 4) tags.push({ t: `დატვირთული გრაფიკი: ${last14} მატჩი 14 დღეში`, tone: 'bad' });
-  if (next && nextDays <= 4 && DB.comps[next.c]?.group !== 'league') tags.push({ t: `${Math.round(nextDays)} დღეში ${DB.comps[next.c].name} — შეიძლება როტაცია`, tone: 'hot' });
+  if (next && nextDays < 3 && DB.comps[next.c]?.group !== 'league') tags.push({ t: `${Math.round(nextDays)} დღეში ${DB.comps[next.c].name} — შეიძლება როტაცია`, tone: 'hot' });
   const partial = DB.core && !DB.core.has(tid); // ამ გუნდის ეროვნული ლიგა ჩვენს ბაზაში არ არის
   if (partial) return { prev, next, days, nextDays, last14, tags: [], partial };
   return { prev, next, days, nextDays, last14, tags };

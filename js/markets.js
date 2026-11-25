@@ -1,6 +1,6 @@
 // ===================== ფსონების კატალოგი + AI ფსონები (შაბლონური ტექსტით) =====================
-import { CALIB } from './calib.js?v=202611251707';
-import { DB, S, scorerProbs } from './engine.js?v=202611251707';
+import { CALIB } from './calib.js?v=202611251715';
+import { DB, S, scorerProbs } from './engine.js?v=202611251715';
 
 const fmt1 = x => x == null ? '—' : (Math.round(x * 10) / 10).toString();
 export const tn = id => DB.teams[id]?.name || '#' + id;

@@ -350,6 +350,31 @@ def fetch_odds(docs, state):
     print(f"   კოეფიციენტები: {len(db)} მატჩი")
 
 
+# ---------------------------------------------------------------- 6. მწვრთნელები (კვირაში ერთხელ)
+def fetch_coaches(docs, state):
+    fp = path("coaches.json")
+    db = load(fp, {})
+    st = state.setdefault("coaches", {})
+    teams = set()
+    for doc in docs.values():
+        teams.update(doc["teams"].keys())
+    todo = [t for t in sorted(teams) if hours_since(st.get(t)) > 24 * 7]
+    print(f"   მწვრთნელები: {len(teams)} გუნდი, განსაახლებელი {len(todo)}")
+    for t in todo:
+        rows = api("coachs", team=t)
+        st[t] = now_iso()
+        cur, hist = None, []
+        for c in rows:
+            for job in c.get("career") or []:
+                if str((job.get("team") or {}).get("id")) != t:
+                    continue
+                hist.append([c.get("name"), job.get("start"), job.get("end"), c.get("birth", {}).get("date")])
+        hist.sort(key=lambda x: x[1] or "", reverse=True)
+        cur = [h for h in hist if not h[2]]
+        db[t] = {"cur": cur[0] if cur else (hist[0] if hist else None), "hist": hist[:6]}
+    save(fp, db)
+
+
 def main():
     if not KEY:
         print("❌ API_FOOTBALL_KEY არ არის")
@@ -392,6 +417,8 @@ def main():
             fetch_h2h(docs, state)
             print("5) კოეფიციენტები")
             fetch_odds(docs, state)
+            print("6) მწვრთნელები")
+            fetch_coaches(docs, state)
     except Budget:
         print("⏸ ამ გაშვების ლიმიტი ამოიწურა — დანარჩენს შემდეგი გაშვება გააგრძელებს")
         for code, doc in docs.items():

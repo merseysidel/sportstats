@@ -28,6 +28,7 @@ EV_TYPE = {"Goal": "G", "Card": "C", "subst": "S", "Var": "V"}
 
 used = 0
 last_call = 0.0
+LAST_ERR = ""
 
 
 class Budget(Exception):
@@ -35,7 +36,7 @@ class Budget(Exception):
 
 
 def api(path, **params):
-    global used, last_call
+    global used, last_call, LAST_ERR
     if used >= BUDGET:
         raise Budget()
     wait = 6.5 - (time.time() - last_call)  # უფასო პაკეტი: ~10 მოთხოვნა წუთში
@@ -56,6 +57,7 @@ def api(path, **params):
     else:
         return []
     errs = data.get("errors")
+    LAST_ERR = json.dumps(errs, ensure_ascii=False) if errs else ""
     if errs:
         print(f"   ⚠️ {path} {params}: {errs}")
         if isinstance(errs, dict) and ("requests" in errs or "rateLimit" in errs):
@@ -110,8 +112,10 @@ def refresh_list(comp, state):
     st = state.setdefault("lists", {})
     fp = path("comp", f"{code}.json")
     doc = load(fp, None)
-    if doc and doc.get("season") == SEASON and hours_since(st.get(code)) < 20:
-        return doc
+    if doc and doc.get("season") == SEASON:
+        all_done = all(f["s"] in FINISHED or f["s"] in ("CANC", "ABD", "AWD", "WO") for f in doc["fixtures"])
+        if all_done or hours_since(st.get(code)) < 20:
+            return doc
     rows = api("fixtures", league=comp["id"], season=SEASON)
     if not rows:
         return doc
@@ -145,7 +149,46 @@ def compact_stats(team_stats):
     return [m.get(k) for k in STAT_KEYS]
 
 
-def fetch_details(docs, core_teams):
+def store_detail(code, f, r, players_cache):
+    hid, aid = f["h"], f["a"]
+    stats = {s["team"]["id"]: s for s in r.get("statistics", [])}
+    if hid in stats and aid in stats:
+        f["st"] = [compact_stats(stats[hid]), compact_stats(stats[aid])]
+        f.pop("nost", None)
+    else:
+        f["st"] = None
+        f["nost"] = 1  # სტატები ამ მატჩზე API-ში არ არის
+    ev = []
+    for e in r.get("events", []):
+        side = 0 if e["team"]["id"] == hid else 1
+        ev.append([e["time"]["elapsed"], e["time"].get("extra") or 0, side, EV_TYPE.get(e["type"], e["type"]),
+                   e.get("detail"), (e.get("player") or {}).get("id"), (e.get("assist") or {}).get("id")])
+    f["ev"] = ev
+    pl = players_cache.setdefault(code, load(path("players", f"{code}.json"), {"names": {}, "m": {}}))
+    lines = []
+    for tb in r.get("players", []):
+        side = 0 if tb["team"]["id"] == hid else 1
+        for p in tb.get("players", []):
+            s = (p.get("statistics") or [{}])[0]
+            gm = s.get("games") or {}
+            mins = gm.get("minutes") or 0
+            if not mins:
+                continue
+            pid = p["player"]["id"]
+            pl["names"][str(pid)] = [p["player"]["name"], gm.get("position")]
+            goals = s.get("goals") or {}
+            cards = s.get("cards") or {}
+            shots = s.get("shots") or {}
+            lines.append([pid, side, mins, goals.get("total") or 0, goals.get("assists") or 0,
+                          cards.get("yellow") or 0, cards.get("red") or 0, shots.get("total") or 0,
+                          shots.get("on") or 0, num(gm.get("rating"))])
+    pl["m"][str(f["i"])] = lines
+
+
+PRIORITY = {c["code"]: i for i, c in enumerate(CFG["competitions"])}
+
+
+def fetch_details(docs, core_teams, state):
     todo = []
     for code, doc in docs.items():
         group = doc["_group"]
@@ -153,64 +196,48 @@ def fetch_details(docs, core_teams):
             if f["s"] in FINISHED and f.get("st") is None and not f.get("nost"):
                 if group == "league" or f["h"] in core_teams or f["a"] in core_teams:
                     todo.append((code, f))
-    todo.sort(key=lambda x: x[1]["d"], reverse=True)  # ჯერ უახლესი
-    print(f"   დეტალები დასაგროვებელია: {len(todo)} მატჩი (~{(len(todo) + 19) // 20} მოთხოვნა)")
+    # რიგი: ჯერ უახლესი მატჩები; ერთსა და იმავე დღეს — ლიგების რიგით
+    todo.sort(key=lambda x: (x[1]["d"][:10], -PRIORITY[x[0]]), reverse=True)
+    print(f"   დეტალები დასაგროვებელია: {len(todo)} მატჩი")
     players_cache = {}
     done = 0
-    for i in range(0, len(todo), 20):
-        chunk = todo[i:i + 20]
-        rows = api("fixtures", ids="-".join(str(f["i"]) for _, f in chunk))
-        by_id = {r["fixture"]["id"]: r for r in rows}
-        for code, f in chunk:
-            r = by_id.get(f["i"])
-            if not r:
-                continue
-            hid, aid = f["h"], f["a"]
-            stats = {s["team"]["id"]: s for s in r.get("statistics", [])}
-            if hid in stats and aid in stats:
-                f["st"] = [compact_stats(stats[hid]), compact_stats(stats[aid])]
+    try:
+        i = 0
+        while i < len(todo):
+            if state.get("ids_ok", True):
+                chunk = todo[i:i + 20]
+                rows = api("fixtures", ids="-".join(str(f["i"]) for _, f in chunk))
+                if not rows and LAST_ERR and "Ids" in LAST_ERR:
+                    print("   ℹ️ ეს პაკეტი ერთდროულად 20 მატჩს არ იძლევა — გადავდივარ თითო მატჩზე")
+                    state["ids_ok"] = False
+                    continue
+                i += len(chunk)
             else:
-                f["st"] = None
-                f["nost"] = 1  # სტატები ამ მატჩზე API-ში არ არის
-            ev = []
-            for e in r.get("events", []):
-                side = 0 if e["team"]["id"] == hid else 1
-                ev.append([e["time"]["elapsed"], e["time"].get("extra") or 0, side, EV_TYPE.get(e["type"], e["type"]),
-                           e.get("detail"), (e.get("player") or {}).get("id"), (e.get("assist") or {}).get("id")])
-            f["ev"] = ev
-            # მოთამაშეები
-            pl = players_cache.setdefault(code, load(path("players", f"{code}.json"), {"names": {}, "m": {}}))
-            lines = []
-            for tb in r.get("players", []):
-                side = 0 if tb["team"]["id"] == hid else 1
-                for p in tb.get("players", []):
-                    s = (p.get("statistics") or [{}])[0]
-                    gm = s.get("games") or {}
-                    mins = gm.get("minutes") or 0
-                    if not mins:
-                        continue
-                    pid = p["player"]["id"]
-                    pl["names"][str(pid)] = [p["player"]["name"], gm.get("position")]
-                    goals = s.get("goals") or {}
-                    cards = s.get("cards") or {}
-                    shots = s.get("shots") or {}
-                    lines.append([pid, side, mins, goals.get("total") or 0, goals.get("assists") or 0,
-                                  cards.get("yellow") or 0, cards.get("red") or 0, shots.get("total") or 0,
-                                  shots.get("on") or 0, num(gm.get("rating"))])
-            pl["m"][str(f["i"])] = lines
-            done += 1
-    for code, pl in players_cache.items():
-        save(path("players", f"{code}.json"), pl)
-    for code, doc in docs.items():
-        save(path("comp", f"{code}.json"), {k: v for k, v in doc.items() if not k.startswith("_")})
-    print(f"   შევსებულია {done} მატჩის დეტალები")
+                chunk = todo[i:i + 1]
+                rows = api("fixtures", id=chunk[0][1]["i"])
+                i += 1
+            by_id = {r["fixture"]["id"]: r for r in rows}
+            for code, f in chunk:
+                r = by_id.get(f["i"])
+                if r:
+                    store_detail(code, f, r, players_cache)
+                    done += 1
+    finally:
+        for code, pl in players_cache.items():
+            save(path("players", f"{code}.json"), pl)
+        for code, doc in docs.items():
+            save(path("comp", f"{code}.json"), {k: v for k, v in doc.items() if not k.startswith("_")})
+        print(f"   შევსებულია {done} მატჩის დეტალები")
 
 
 # ---------------------------------------------------------------- 3. დაზიანებები
-def fetch_injuries(comp, state, core_teams):
+def fetch_injuries(comp, state, core_teams, doc=None):
     code = comp["code"]
     st = state.setdefault("injuries", {})
     if hours_since(st.get(code)) < 20:
+        return
+    # დასრულებულ სეზონზე დაზიანებები ერთხელ საკმარისია
+    if st.get(code) and doc and all(f["s"] in FINISHED for f in doc["fixtures"]):
         return
     rows = api("injuries", league=comp["id"], season=SEASON)
     out = []
@@ -244,11 +271,12 @@ def main():
         for comp in CFG["competitions"]:
             if comp["group"] == "league" and comp["code"] in docs:
                 core.update(int(t) for t in docs[comp["code"]]["teams"])
-        print("2) მატჩების დეტალები")
-        fetch_details(docs, core)
-        print("3) დაზიანებები")
+        print("2) დაზიანებები")
         for comp in CFG["competitions"]:
-            fetch_injuries(comp, state, core)
+            if comp["group"] == "league":
+                fetch_injuries(comp, state, core, docs.get(comp["code"]))
+        print("3) მატჩების დეტალები")
+        fetch_details(docs, core, state)
     except Budget:
         print("⏸ ამ გაშვების ლიმიტი ამოიწურა — დანარჩენს შემდეგი გაშვება გააგრძელებს")
         for code, doc in docs.items():

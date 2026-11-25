@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SportStats — სტატისტიკა და პროგნოზები</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Georgian:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#/"><span class="dot"></span>Sport<b>Stats</b></a>
+  <nav id="nav">
+    <a href="#/" data-r="home">მატჩები</a>
+    <a href="#/scan" data-r="scan">სტატისტიკა</a>
+    <a href="#/cmp" data-r="cmp">შედარება</a>
+    <a href="#/acc" data-r="acc">სიზუსტე</a>
+  </nav>
+  <div class="sports"><button class="on">⚽ ფეხბურთი</button><button disabled title="მალე">🎾 ჩოგბურთი</button><button disabled title="მალე">🥊 MMA</button></div>
+</header>
+<div class="wrap">
+  <aside id="side"></aside>
+  <main id="view"></main>
+</div>
+<footer id="foot"></footer>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

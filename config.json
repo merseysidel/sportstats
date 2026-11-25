@@ -1,22 +1,120 @@
 {
-  "season": 2024,
-  "max_requests_per_run": 92,
+  "season": 2026,
+  "max_requests_per_run": 3000,
   "competitions": [
-    {"code": "pl",   "id": 39,  "name": "პრემიერლიგა",        "group": "league", "country": "ინგლისი"},
-    {"code": "ll",   "id": 140, "name": "ლა ლიგა",            "group": "league", "country": "ესპანეთი"},
-    {"code": "sa",   "id": 135, "name": "სერია A",            "group": "league", "country": "იტალია"},
-    {"code": "bl",   "id": 78,  "name": "ბუნდესლიგა",         "group": "league", "country": "გერმანია"},
-    {"code": "l1",   "id": 61,  "name": "ლიგა 1",             "group": "league", "country": "საფრანგეთი"},
-    {"code": "ed",   "id": 88,  "name": "ერედივიზიონი",       "group": "league", "country": "ნიდერლანდები"},
-    {"code": "ucl",  "id": 2,   "name": "ჩემპიონთა ლიგა",     "group": "euro",   "country": "ევროპა"},
-    {"code": "uel",  "id": 3,   "name": "ევროპა ლიგა",        "group": "euro",   "country": "ევროპა"},
-    {"code": "uecl", "id": 848, "name": "კონფერენს ლიგა",     "group": "euro",   "country": "ევროპა"},
-    {"code": "fac",  "id": 45,  "name": "FA თასი",            "group": "cup",    "country": "ინგლისი"},
-    {"code": "efl",  "id": 48,  "name": "Carabao თასი",       "group": "cup",    "country": "ინგლისი"},
-    {"code": "cdr",  "id": 143, "name": "Copa del Rey",       "group": "cup",    "country": "ესპანეთი"},
-    {"code": "cit",  "id": 137, "name": "იტალიის თასი",       "group": "cup",    "country": "იტალია"},
-    {"code": "cdf",  "id": 66,  "name": "საფრანგეთის თასი",   "group": "cup",    "country": "საფრანგეთი"},
-    {"code": "dfb",  "id": 81,  "name": "გერმანიის თასი",     "group": "cup",    "country": "გერმანია"},
-    {"code": "knvb", "id": 90,  "name": "ნიდერლანდების თასი", "group": "cup",    "country": "ნიდერლანდები"}
-  ]
+    {
+      "code": "pl",
+      "id": 39,
+      "name": "პრემიერლიგა",
+      "group": "league",
+      "country": "ინგლისი"
+    },
+    {
+      "code": "ll",
+      "id": 140,
+      "name": "ლა ლიგა",
+      "group": "league",
+      "country": "ესპანეთი"
+    },
+    {
+      "code": "sa",
+      "id": 135,
+      "name": "სერია A",
+      "group": "league",
+      "country": "იტალია"
+    },
+    {
+      "code": "bl",
+      "id": 78,
+      "name": "ბუნდესლიგა",
+      "group": "league",
+      "country": "გერმანია"
+    },
+    {
+      "code": "l1",
+      "id": 61,
+      "name": "ლიგა 1",
+      "group": "league",
+      "country": "საფრანგეთი"
+    },
+    {
+      "code": "ed",
+      "id": 88,
+      "name": "ერედივიზიონი",
+      "group": "league",
+      "country": "ნიდერლანდები"
+    },
+    {
+      "code": "ucl",
+      "id": 2,
+      "name": "ჩემპიონთა ლიგა",
+      "group": "euro",
+      "country": "ევროპა"
+    },
+    {
+      "code": "uel",
+      "id": 3,
+      "name": "ევროპა ლიგა",
+      "group": "euro",
+      "country": "ევროპა"
+    },
+    {
+      "code": "uecl",
+      "id": 848,
+      "name": "კონფერენს ლიგა",
+      "group": "euro",
+      "country": "ევროპა"
+    },
+    {
+      "code": "fac",
+      "id": 45,
+      "name": "FA თასი",
+      "group": "cup",
+      "country": "ინგლისი"
+    },
+    {
+      "code": "efl",
+      "id": 48,
+      "name": "Carabao თასი",
+      "group": "cup",
+      "country": "ინგლისი"
+    },
+    {
+      "code": "cdr",
+      "id": 143,
+      "name": "Copa del Rey",
+      "group": "cup",
+      "country": "ესპანეთი"
+    },
+    {
+      "code": "cit",
+      "id": 137,
+      "name": "იტალიის თასი",
+      "group": "cup",
+      "country": "იტალია"
+    },
+    {
+      "code": "cdf",
+      "id": 66,
+      "name": "საფრანგეთის თასი",
+      "group": "cup",
+      "country": "საფრანგეთი"
+    },
+    {
+      "code": "dfb",
+      "id": 81,
+      "name": "გერმანიის თასი",
+      "group": "cup",
+      "country": "გერმანია"
+    },
+    {
+      "code": "knvb",
+      "id": 90,
+      "name": "ნიდერლანდების თასი",
+      "group": "cup",
+      "country": "ნიდერლანდები"
+    }
+  ],
+  "h2h_years": 15,
+  "h2h_days_ahead": 7
 }

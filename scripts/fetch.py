@@ -28,6 +28,7 @@ EV_TYPE = {"Goal": "G", "Card": "C", "subst": "S", "Var": "V"}
 
 used = 0
 last_call = 0.0
+PACE = 6.5
 LAST_ERR = ""
 
 
@@ -39,7 +40,7 @@ def api(path, **params):
     global used, last_call, LAST_ERR
     if used >= BUDGET:
         raise Budget()
-    wait = 6.5 - (time.time() - last_call)  # უფასო პაკეტი: ~10 მოთხოვნა წუთში
+    wait = PACE - (time.time() - last_call)  # უფასო: ~10/წთ, ფასიანი: ბევრად მეტი
     if wait > 0:
         time.sleep(wait)
     url = BASE + path + "?" + urllib.parse.urlencode(params)
@@ -251,6 +252,41 @@ def fetch_injuries(comp, state, core_teams, doc=None):
     st[code] = now_iso()
 
 
+# ---------------------------------------------------------------- 4. H2H (მომავალი მატჩებისთვის)
+def fetch_h2h(docs, state):
+    years = int(CFG.get("h2h_years", 15))
+    ahead = int(CFG.get("h2h_days_ahead", 7))
+    fp = path("h2h.json")
+    db = load(fp, {})
+    st = state.setdefault("h2h", {})
+    now = datetime.now(timezone.utc)
+    since = f"{now.year - years}-{now.month:02d}-01"
+    pairs = []
+    for doc in docs.values():
+        for f in doc["fixtures"]:
+            if f["s"] in ("NS", "TBD", "PST"):
+                dt = datetime.fromisoformat(f["d"])
+                if 0 <= (dt - now).total_seconds() <= ahead * 86400:
+                    pairs.append(tuple(sorted((f["h"], f["a"]))))
+    pairs = sorted(set(pairs))
+    todo = [p for p in pairs if hours_since(st.get(f"{p[0]}-{p[1]}")) > 24 * 6]
+    print(f"   H2H: {len(pairs)} წყვილი მომავალ {ahead} დღეში, განსაახლებელი {len(todo)}")
+    for a, b in todo:
+        rows = api("fixtures/headtohead", h2h=f"{a}-{b}", **{"from": since, "to": now.strftime("%Y-%m-%d")})
+        out = []
+        for r in rows:
+            if r["fixture"]["status"]["short"] not in FINISHED:
+                continue
+            t = r["teams"]
+            out.append([r["fixture"]["date"][:10], t["home"]["id"], t["away"]["id"], r["goals"]["home"], r["goals"]["away"],
+                        r["league"]["name"], t["home"]["name"], t["away"]["name"],
+                        r["score"]["halftime"]["home"], r["score"]["halftime"]["away"]])
+        out.sort(reverse=True)
+        db[f"{a}-{b}"] = out
+        st[f"{a}-{b}"] = now_iso()
+    save(fp, db)
+
+
 def main():
     if not KEY:
         print("❌ API_FOOTBALL_KEY არ არის")
@@ -258,7 +294,18 @@ def main():
     state = load(path("state.json"), {})
     if state.get("season") != SEASON:
         state = {"season": SEASON}
-    print(f"სეზონი {SEASON}, ლიმიტი ამ გაშვებაზე: {BUDGET} მოთხოვნა")
+    global PACE
+    print(f"სეზონი {SEASON}-{SEASON + 1}, ლიმიტი ამ გაშვებაზე: {BUDGET} მოთხოვნა")
+    try:
+        req = urllib.request.Request(BASE + "status", headers={"x-apisports-key": KEY})
+        stt = json.load(urllib.request.urlopen(req, timeout=30)).get("response", {})
+        plan = stt.get("subscription", {}).get("plan", "?")
+        print(f"პაკეტი: {plan} | დღეს გამოყენებული: {stt.get('requests', {}).get('current')}/{stt.get('requests', {}).get('limit_day')}")
+        if plan and plan.lower() != "free":
+            PACE = 0.25
+            state["ids_ok"] = True
+    except Exception as e:
+        print("status ვერ წავიკითხე:", e)
     docs = {}
     try:
         print("1) მატჩების სიები")
@@ -273,10 +320,12 @@ def main():
                 core.update(int(t) for t in docs[comp["code"]]["teams"])
         print("2) დაზიანებები")
         for comp in CFG["competitions"]:
-            if comp["group"] == "league":
+            if comp["group"] == "league" or PACE < 1:
                 fetch_injuries(comp, state, core, docs.get(comp["code"]))
         print("3) მატჩების დეტალები")
         fetch_details(docs, core, state)
+        print("4) H2H")
+        fetch_h2h(docs, state)
     except Budget:
         print("⏸ ამ გაშვების ლიმიტი ამოიწურა — დანარჩენს შემდეგი გაშვება გააგრძელებს")
         for code, doc in docs.items():

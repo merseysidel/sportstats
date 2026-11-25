@@ -144,12 +144,13 @@ export function buildMarkets(pr) {
 }
 
 // -------------------------------------------------- AI ფსონები
-const NO_PICK = new Set(['cs', 'exg', 'htft', 'hh', 'oe', 'bttso', 'poss', 'h2r', 'ht', 'fg']);
+const NO_PICK = new Set(['cs', 'exg', 'htft', 'hh', 'oe', 'bttso', 'poss', 'h2r', 'ht', 'fg', 'rc', 'dnb']);
 export function aiPicks(mk, min = 0.7, max = 8) {
   const all = [...mk.R, ...mk.ST, ...mk.OT].flatMap(gr => gr.items.map(it => ({ ...it, group: gr.title })));
   const best = {};
   for (const it of all) {
-    if (it.p < min || NO_PICK.has(it.fam) || it.p > 0.985) continue;
+    if (it.p < min || NO_PICK.has(it.fam) || it.p > 0.95) continue;
+    if (it.fam === 'ah' && it.label.includes('+')) continue; // „+1.5“ ფორა ორმაგ შანსს იმეორებს
     const k = it.fam + (it.dir || '') + (it.fam === 'ps' || it.fam === 'psot' || it.fam === 'pyc' ? it.label : '');
     const b = best[k];
     if (!b) { best[k] = it; continue; }
@@ -229,4 +230,18 @@ export function checkItem(f, it) {
     }
   }
   return null;
+}
+
+// მოკლე სახელი ჩიპებისთვის: „კუთხ. მეტი 9.5“, „Arsenal გოლები მეტი 1.5“
+export function pickName(p) {
+  const g = p.group.replace(/\s*\(.*\)$/, '');
+  if (/^მატჩის შედეგი|^ორმაგი შანსი|^ფორა|^გამარჯვება მშრალად|^ფრეს გარეშე/.test(g)) return p.label.replace(/^(1|2|X) · /, '');
+  const short = { 'გოლები სულ': 'გოლები', 'ორივე გაიტანს': 'BTTS', 'კუთხურები სულ': 'კუთხ.', 'ყვითელი ბარათები სულ': 'ყვით.', 'ჯარიმები': 'ჯარიმ.', 'ოფსაიდები სულ': 'ოფს.',
+    'კარში დარტყმები სულ': 'კარში დარტ.', 'დარტყმები სულ': 'დარტ.', '1-ლი ტაიმის გოლები': '1-ლი ტაიმი', 'მე-2 ტაიმის გოლები': 'მე-2 ტაიმი',
+    'მშრალი მატჩი': 'მშრალი:', 'გუნდის ყვითელი ბარათები': 'ყვით.', 'გუნდის კარში დარტყმები': 'კარში დარტ.', 'გაიტანს მატჩში': 'გაიტანს:',
+    'გააკეთებს ასისტს': 'ასისტი:', 'კარში დარტყმა 1+': 'კარში დარტ. 1+:', 'მიიღებს ყვითელს': 'ყვითელი:' };
+  for (const [k, v] of Object.entries(short)) if (g.startsWith(k)) return `${v} ${p.label}`;
+  const m = g.match(/^(.*) — (გოლები|კუთხურები)$/);
+  if (m) return `${m[1]} ${m[2] === 'გოლები' ? 'გოლები' : 'კუთხ.'} ${p.label}`;
+  return `${g}: ${p.label}`;
 }

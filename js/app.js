@@ -1,6 +1,6 @@
 // ===================== SportStats — ინტერფეისი =====================
 import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js';
-import { buildMarkets, aiPicks, explain, checkItem, tn } from './markets.js';
+import { buildMarkets, aiPicks, explain, checkItem, tn, pickName } from './markets.js';
 import { traits, patterns, keyAbsences, standings } from './insights.js';
 import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js';
 
@@ -54,11 +54,14 @@ async function boot() {
   render();
 }
 function lastMatchDay() {
-  const cnt = {};
-  for (const f of DB.fixtures) if (isFin(f) && f.st) { const d = f.d.slice(0, 10); cnt[d] = (cnt[d] || 0) + 1; }
-  const days = Object.keys(cnt).sort();
-  for (let i = days.length - 1; i >= 0; i--) if (cnt[days[i]] >= 6) return days[i];
-  return days[days.length - 1] || iso(new Date());
+  // ბოლო დღე, სადაც ≥6 მატჩია (უპირატესობა — დეტალური სტატებით)
+  for (const needSt of [true, false]) {
+    const cnt = {};
+    for (const f of DB.fixtures) if (isFin(f) && (!needSt || f.st)) { const d = f.d.slice(0, 10); cnt[d] = (cnt[d] || 0) + 1; }
+    const days = Object.keys(cnt).sort();
+    for (let i = days.length - 1; i >= 0; i--) if (cnt[days[i]] >= 6) return days[i];
+  }
+  return iso(new Date());
 }
 
 function sidebar() {
@@ -150,7 +153,7 @@ function homeView() {
     return h + `<div class="card">` + all.map(({ f, pr, p }) => {
       const c = checkItem(f, p);
       return `<a class="pickrow" href="#/m/${f.i}"><span class="tm">${hhmm(f.t)}</span><span class="pm">${esc(tn(f.h))} – ${esc(tn(f.a))}<small>${esc(compName(f.c))}</small></span>
-        <span class="pk">${esc(p.label)}<small>${esc(p.group.replace(/\s*\(.*\)$/, ''))}</small></span><span class="pct ${pcls(p.p)}">${P(p.p)}</span>${c == null ? '<span class="ck"></span>' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅' : '❌'}</span>`}</a>`;
+        <span class="pk">${esc(pickName(p))}<small>${esc(p.group.replace(/\s*\(.*\)$/, ''))}</small></span><span class="pct ${pcls(p.p)}">${P(p.p)}</span>${c == null ? '<span class="ck"></span>' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅' : '❌'}</span>`}</a>`;
     }).join('') + `</div>`;
   }
   const byComp = {};
@@ -166,7 +169,7 @@ function homeView() {
         <span class="teams"><span>${logo(f.h)}${esc(tn(f.h))}</span><span>${logo(f.a)}${esc(tn(f.a))}</span></span>
         <span class="sc">${fin ? `<b>${f.g[0]}</b><b>${f.g[1]}</b>` : ''}</span>
         <span class="odds"><i class="${pcls(pr.p1)}">1 <b>${P(pr.p1)}</b></i><i class="${pcls(pr.px)}">X <b>${P(pr.px)}</b></i><i class="${pcls(pr.p2)}">2 <b>${P(pr.p2)}</b></i></span>
-        <span class="best">${top ? `<span class="chip ${pcls(top.p)}">${esc(top.label)} · ${P(top.p)}</span>${c1 == null ? '' : c1 ? ' ✅' : ' ❌'}<small>${picks.length > 1 ? `+${picks.length - 1} ფსონი` : ''}</small>` : '<small class="mut">70%+ ფსონი არ არის</small>'}</span>
+        <span class="best">${top ? `<span class="chip ${pcls(top.p)}">${esc(pickName(top))} · ${P(top.p)}</span>${c1 == null ? '' : c1 ? ' ✅' : ' ❌'}<small>${picks.length > 1 ? `+${picks.length - 1} ფსონი` : ''}</small>` : '<small class="mut">70%+ ფსონი არ არის</small>'}</span>
       </a>`;
     }
     h += `</div>`;
@@ -211,7 +214,7 @@ function overview(f, pr, mk, picks) {
   if (!picks.length) h += `<div class="empty sm">ამ მატჩზე ${Math.round(MIN * 100)}%-ზე მაღალი ალბათობის ფსონი ვერ მოიძებნა.</div>`;
   for (const p of picks) {
     const c = checkItem(f, p);
-    h += `<div class="pick"><div class="ph"><span class="pct big ${pcls(p.p)}">${P(p.p)}</span><div><b>${esc(p.label)}</b><small>${esc(p.group)}</small></div>${c == null ? '' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅ გამართლდა' : '❌ ვერ გამართლდა'}</span>`}</div>
+    h += `<div class="pick"><div class="ph"><span class="pct big ${pcls(p.p)}">${P(p.p)}</span><div><b>${esc(pickName(p))}</b><small>${esc(p.group)}</small></div>${c == null ? '' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅ გამართლდა' : '❌ ვერ გამართლდა'}</span>`}</div>
       <p>${esc(explainPick(pr, p))}</p></div>`;
   }
   const ns = numSentence(f);
@@ -250,7 +253,7 @@ function explainPick(pr, p) {
   }
   return explain(pr, p);
 }
-const traitChips = tr => tr.length ? `<div class="chips">${tr.map(t => `<span class="trait ${t.tone}" title="${esc(t.why)}">${esc(t.label)}<small>${esc(t.why)}</small></span>`).join('')}</div>` : '<div class="mut small">ჯერ საკმარისი მატჩი არ არის</div>';
+const traitChips = tr => tr.length ? `<div class="chips">${tr.map(t => `<span class="trait ${t.tone}" title="${esc(t.why)}">${esc(t.label)}<small>${esc(t.why)}</small></span>`).join('')}</div>` : '<div class="mut small">მკაფიო თვისება ჯერ ვერ გამოვლინდა</div>';
 
 function marketGroups(f, groups) {
   return `<div class="mgrid">` + groups.map(g => `<div class="card mg"><h4>${esc(g.title)}</h4>${g.note ? `<div class="mut small">${esc(g.note)}</div>` : ''}${g.items.map(it => {
@@ -447,7 +450,7 @@ function accView() {
 let accJob = 0;
 async function runAccuracy() {
   const job = ++accJob, before = dayStart(ST.date) + 864e5;
-  const fx = DB.fixtures.filter(f => isFin(f) && f.t < before && f.st && teamRows(f.h, f.t).length >= 5 && teamRows(f.a, f.t).length >= 5);
+  const fx = DB.fixtures.filter(f => isFin(f) && f.t < before && teamRows(f.h, f.t).length >= 5 && teamRows(f.a, f.t).length >= 5);
   const fam = {}, byP = {}, byComp = {};
   let main = { n: 0, top1x2: 0, o25: 0, btts: 0 };
   for (let i = 0; i < fx.length; i++) {

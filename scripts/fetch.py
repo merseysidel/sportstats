@@ -196,8 +196,8 @@ def fetch_details(docs, core_teams, state):
             if f["s"] in FINISHED and f.get("st") is None and not f.get("nost"):
                 if group == "league" or f["h"] in core_teams or f["a"] in core_teams:
                     todo.append((code, f))
-    # რიგი: ჯერ უახლესი მატჩები; ერთსა და იმავე დღეს — ლიგების რიგით
-    todo.sort(key=lambda x: (x[1]["d"][:10], -PRIORITY[x[0]]), reverse=True)
+    # რიგი: ჯერ ტურნირების რიგით (პრემიერლიგა პირველი), ტურნირში — უახლესი მატჩები პირველი
+    todo.sort(key=lambda x: (PRIORITY[x[0]], -datetime.fromisoformat(x[1]["d"]).timestamp()))
     print(f"   დეტალები დასაგროვებელია: {len(todo)} მატჩი")
     players_cache = {}
     done = 0
@@ -285,9 +285,13 @@ def main():
     state["requests_last_run"] = used
     # პროგრესი
     total = withst = 0
+    core = set()
+    for comp in CFG["competitions"]:
+        if comp["group"] == "league" and comp["code"] in docs:
+            core.update(int(t) for t in docs[comp["code"]]["teams"])
     for doc in docs.values():
         for f in doc["fixtures"]:
-            if f["s"] in FINISHED:
+            if f["s"] in FINISHED and (doc.get("_group") == "league" or f["h"] in core or f["a"] in core):
                 total += 1
                 withst += 1 if (f.get("st") is not None or f.get("nost")) else 0
     state["progress"] = {"finished": total, "detailed": withst}

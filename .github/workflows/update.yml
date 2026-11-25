@@ -9,6 +9,10 @@ on:
         description: "მაქსიმუმ რამდენი მოთხოვნა (ცარიელი = config.json)"
         required: false
         default: ""
+      archive_season:
+        description: "არქივის სეზონი (მაგ. 2025) — ცარიელი = მიმდინარე სეზონი"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -30,7 +34,13 @@ jobs:
         env:
           API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
           MAX_REQ: ${{ github.event.inputs.max_req }}
-        run: python scripts/fetch.py
+          ARCH: ${{ github.event.inputs.archive_season }}
+        run: |
+          if [ -n "$ARCH" ]; then
+            SEASON="$ARCH" DATA_DIR="data/archive/$ARCH" SKIP_H2H=1 python scripts/fetch.py
+          else
+            python scripts/fetch.py
+          fi
       - name: შენახვა რეპოში
         run: |
           git config user.name "sportstats-bot"

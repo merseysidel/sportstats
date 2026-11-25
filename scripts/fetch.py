@@ -13,7 +13,7 @@ import json, os, sys, time, urllib.request, urllib.parse
 from datetime import datetime, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA = os.path.join(ROOT, "data")
+DATA = os.path.join(ROOT, os.environ.get("DATA_DIR") or "data")
 CFG = json.load(open(os.path.join(ROOT, "config.json"), encoding="utf-8"))
 SEASON = int(os.environ.get("SEASON") or CFG["season"])
 BUDGET = int(os.environ.get("MAX_REQ") or CFG["max_requests_per_run"])
@@ -253,6 +253,15 @@ def fetch_injuries(comp, state, core_teams, doc=None):
 
 
 # ---------------------------------------------------------------- 4. H2H (მომავალი მატჩებისთვის)
+CUP_IDS = {c["id"] for c in CFG["competitions"] if c["group"] == "cup"}
+CUP_WORDS = ("cup", "pokal", "coppa", "copa", "coupe", "beker", "trophy", "shield", "super", "trofeo", "taça")
+
+
+def is_cup(lg):
+    if lg.get("id") in CUP_IDS:
+        return True
+    n = (lg.get("name") or "").lower()
+    return any(w in n for w in CUP_WORDS)
 def fetch_h2h(docs, state):
     years = int(CFG.get("h2h_years", 15))
     ahead = int(CFG.get("h2h_days_ahead", 7))
@@ -269,7 +278,9 @@ def fetch_h2h(docs, state):
                 if 0 <= (dt - now).total_seconds() <= ahead * 86400:
                     pairs.append(tuple(sorted((f["h"], f["a"]))))
     pairs = sorted(set(pairs))
-    todo = [p for p in pairs if hours_since(st.get(f"{p[0]}-{p[1]}")) > 24 * 6]
+    # ძველი ფორმატის ჩანაწერები (ტურნირის ლოგოს გარეშე) თავიდან ჩაიტვირთება
+    todo = [p for p in pairs if hours_since(st.get(f"{p[0]}-{p[1]}")) > 24 * 6
+            or any(len(x) < 14 for x in db.get(f"{p[0]}-{p[1]}", []))]
     print(f"   H2H: {len(pairs)} წყვილი მომავალ {ahead} დღეში, განსაახლებელი {len(todo)}")
     for a, b in todo:
         rows = api("fixtures/headtohead", h2h=f"{a}-{b}", **{"from": since, "to": now.strftime("%Y-%m-%d")})
@@ -277,10 +288,11 @@ def fetch_h2h(docs, state):
         for r in rows:
             if r["fixture"]["status"]["short"] not in FINISHED:
                 continue
-            t = r["teams"]
+            t, lg = r["teams"], r["league"]
             out.append([r["fixture"]["date"][:10], t["home"]["id"], t["away"]["id"], r["goals"]["home"], r["goals"]["away"],
-                        r["league"]["name"], t["home"]["name"], t["away"]["name"],
-                        r["score"]["halftime"]["home"], r["score"]["halftime"]["away"]])
+                        lg["name"], t["home"]["name"], t["away"]["name"],
+                        r["score"]["halftime"]["home"], r["score"]["halftime"]["away"],
+                        lg.get("id"), lg.get("logo"), 1 if is_cup(lg) else 0, r["fixture"]["status"]["short"]])
         out.sort(reverse=True)
         db[f"{a}-{b}"] = out
         st[f"{a}-{b}"] = now_iso()
@@ -324,8 +336,9 @@ def main():
                 fetch_injuries(comp, state, core, docs.get(comp["code"]))
         print("3) მატჩების დეტალები")
         fetch_details(docs, core, state)
-        print("4) H2H")
-        fetch_h2h(docs, state)
+        if not os.environ.get("SKIP_H2H"):
+            print("4) H2H")
+            fetch_h2h(docs, state)
     except Budget:
         print("⏸ ამ გაშვების ლიმიტი ამოიწურა — დანარჩენს შემდეგი გაშვება გააგრძელებს")
         for code, doc in docs.items():

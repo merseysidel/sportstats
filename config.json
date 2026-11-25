@@ -119,5 +119,7 @@
   "h2h_days_ahead": 7,
   "archive": [
     2025
-  ]
+  ],
+  "odds_days_ahead": 4,
+  "min_odds": 1.25
 }

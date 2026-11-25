@@ -299,6 +299,57 @@ def fetch_h2h(docs, state):
     save(fp, db)
 
 
+# ---------------------------------------------------------------- 5. კოეფიციენტები (მომავალი მატჩები)
+ODDS_BETS = {"Match Winner", "Double Chance", "Goals Over/Under", "Both Teams Score", "Total - Home", "Total - Away",
+             "First Half Winner", "Goals Over/Under First Half", "Goals Over/Under - Second Half", "Corners Over Under",
+             "Home Corners Over/Under", "Away Corners Over/Under", "Cards Over/Under", "Asian Handicap",
+             "Clean Sheet - Home", "Clean Sheet - Away", "Win to Nil - Home", "Win to Nil - Away", "Exact Score",
+             "HT/FT Double", "Draw No Bet", "Odd/Even", "Anytime Goal Scorer", "First Team To Score",
+             "Home Team Score a Goal", "Away Team Score a Goal", "Total ShotOnGoal", "Fouls. Over/Under", "Offsides Over/Under"}
+BOOK_PREF = ["Bet365", "Pinnacle", "1xBet", "Unibet", "Marathonbet", "Betfair", "William Hill", "Bwin"]
+
+
+def fetch_odds(docs, state):
+    ahead = int(CFG.get("odds_days_ahead", 4))
+    fp = path("odds.json")
+    db = load(fp, {})
+    st = state.setdefault("odds", {})
+    now = datetime.now(timezone.utc)
+    # ძველი მატჩების კოეფიციენტები რჩება (ისტორიისთვის), მაგრამ ფაილი არ იზრდება უსასრულოდ: 60 დღეზე ძველი იშლება
+    ids = {}
+    for doc in docs.values():
+        for f in doc["fixtures"]:
+            dt = datetime.fromisoformat(f["d"])
+            ids[str(f["i"])] = dt
+            if f["s"] in ("NS", "TBD") and 0 <= (dt - now).total_seconds() <= ahead * 86400:
+                if hours_since(st.get(str(f["i"]))) < 10:
+                    continue
+                rows = api("odds", fixture=f["i"])
+                st[str(f["i"])] = now_iso()
+                if not rows:
+                    continue
+                books = rows[0].get("bookmakers", [])
+                if not books:
+                    continue
+                books.sort(key=lambda b: BOOK_PREF.index(b["name"]) if b["name"] in BOOK_PREF else 99)
+                b = books[0]
+                m = {}
+                for bet in b.get("bets", []):
+                    if bet["name"] in ODDS_BETS:
+                        m[bet["name"]] = {str(v["value"]): float(v["odd"]) for v in bet.get("values", []) if v.get("odd")}
+                # დამატებით: სხვა ბუკმეკერებიდან ის ბაზრები, რაც პირველს არ აქვს
+                for ob in books[1:4]:
+                    for bet in ob.get("bets", []):
+                        if bet["name"] in ODDS_BETS and bet["name"] not in m:
+                            m[bet["name"]] = {str(v["value"]): float(v["odd"]) for v in bet.get("values", []) if v.get("odd")}
+                db[str(f["i"])] = [b["name"], m, now_iso()[:16]]
+    for k in list(db):
+        if k in ids and (now - ids[k]).days > 60:
+            db.pop(k)
+    save(fp, db)
+    print(f"   კოეფიციენტები: {len(db)} მატჩი")
+
+
 def main():
     if not KEY:
         print("❌ API_FOOTBALL_KEY არ არის")
@@ -339,6 +390,8 @@ def main():
         if not os.environ.get("SKIP_H2H"):
             print("4) H2H")
             fetch_h2h(docs, state)
+            print("5) კოეფიციენტები")
+            fetch_odds(docs, state)
     except Budget:
         print("⏸ ამ გაშვების ლიმიტი ამოიწურა — დანარჩენს შემდეგი გაშვება გააგრძელებს")
         for code, doc in docs.items():

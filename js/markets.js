@@ -1,5 +1,5 @@
 // ===================== ფსონების კატალოგი + AI ფსონები (შაბლონური ტექსტით) =====================
-import { DB, S, scorerProbs } from './engine.js?v=202611251608';
+import { DB, S, scorerProbs } from './engine.js?v=202611251616';
 
 const fmt1 = x => x == null ? '—' : (Math.round(x * 10) / 10).toString();
 export const tn = id => DB.teams[id]?.name || '#' + id;
@@ -143,13 +143,70 @@ export function buildMarkets(pr) {
   return { R, ST, OT, hs, as };
 }
 
+// -------------------------------------------------- ბუკმეკერის კოეფიციენტები
+// აბრუნებს: undefined — ამ მატჩზე/ბაზარზე მონაცემი არ არის; {absent:true} — ბუკმეკერი ამ ხაზს არ სთავაზობს (ზედმეტად აშკარაა);
+// {odd, book} — კოეფიციენტი
+export function oddsFor(f, it) {
+  const rec = DB.odds?.[f.i]; if (!rec) return undefined;
+  const [book, M] = rec, H = tn(f.h), L = it.label;
+  const ou = (bet, prefix = '') => {
+    const b = M[bet]; if (!b) return undefined;
+    const k = `${it.dir === 'o' ? 'Over' : 'Under'} ${it.line}`;
+    return b[k] != null ? { odd: b[k], book } : { absent: true };
+  };
+  const pick = (bet, key) => { const b = M[bet]; if (!b) return undefined; return b[key] != null ? { odd: b[key], book } : { absent: true }; };
+  const side = L.startsWith(H) ? 'Home' : 'Away';
+  switch (it.fam) {
+    case '1x2': return pick('Match Winner', { '1': 'Home', 'X': 'Draw', '2': 'Away' }[L[0]]);
+    case 'dc': return pick('Double Chance', { '1X': 'Home/Draw', 'X2': 'Draw/Away', '12': 'Home/Away' }[L.slice(0, 2)]);
+    case 'dnb': return pick('Draw No Bet', side);
+    case 'goals': return ou('Goals Over/Under');
+    case 'hgoals': return ou('Total - Home');
+    case 'agoals': return ou('Total - Away');
+    case 'btts': return pick('Both Teams Score', L === 'კი' ? 'Yes' : 'No');
+    case 'htg': return ou('Goals Over/Under First Half');
+    case 'h2g': return ou('Goals Over/Under - Second Half');
+    case 'ht': return pick('First Half Winner', { '1': 'Home', 'X': 'Draw', '2': 'Away' }[L[0]]);
+    case 'cor': return ou('Corners Over Under');
+    case 'hcor': return ou('Home Corners Over/Under');
+    case 'acor': return ou('Away Corners Over/Under');
+    case 'yc': return ou('Cards Over/Under');
+    case 'sot': return ou('Total ShotOnGoal');
+    case 'foul': return ou('Fouls. Over/Under');
+    case 'off': return ou('Offsides Over/Under');
+    case 'cs1': return pick(`Clean Sheet - ${side}`, 'Yes');
+    case 'wtn': return pick(`Win to Nil - ${side}`, 'Yes');
+    case 'oe': return pick('Odd/Even', L === 'კენტი' ? 'Odd' : 'Even');
+    case 'cs': return pick('Exact Score', L);
+    case 'htft': { const m = { '1': 'Home', 'X': 'Draw', '2': 'Away' }; const [a, b] = L.split('/'); return pick('HT/FT Double', `${m[a]}/${m[b]}`); }
+    case 'ah': { const m = L.match(/([−+])(\d\.5)$/); if (!m) return undefined; return pick('Asian Handicap', `${side} ${m[1] === '−' ? '-' : '+'}${m[2]}`); }
+    case 'ps': {
+      const b = M['Anytime Goal Scorer']; if (!b || !it.pl) return undefined;
+      const last = it.pl.name.split(' ').pop().toLowerCase();
+      const k = Object.keys(b).find(x => x.toLowerCase().split(' ').pop() === last);
+      return k ? { odd: b[k], book } : undefined;
+    }
+  }
+  return undefined;
+}
+
 // -------------------------------------------------- AI ფსონები
 const NO_PICK = new Set(['cs', 'exg', 'htft', 'hh', 'oe', 'bttso', 'poss', 'h2r', 'ht', 'fg', 'rc', 'dnb']);
-export function aiPicks(mk, min = 0.7, max = 8) {
+export function aiPicks(mk, min = 0.7, max = 8, f = null) {
   const all = [...mk.R, ...mk.ST, ...mk.OT].flatMap(gr => gr.items.map(it => ({ ...it, group: gr.title })));
   const best = {};
+  const minOdd = DB.cfg?.min_odds || 1.25;
   for (const it of all) {
     if (it.p < min || NO_PICK.has(it.fam) || it.p > 0.95) continue;
+    if (f) {
+      const o = oddsFor(f, it);
+      if (o && o.absent) continue;                 // ბუკმეკერი ამ ხაზს არც კი სთავაზობს
+      if (o && o.odd < minOdd) continue;           // კოეფიციენტი ზედმეტად დაბალია
+      if (o) { it.odd = o.odd; it.book = o.book; it.value = it.p * o.odd - 1; }
+      // კოეფიციენტი უცნობია: სამართლიანი კოეფიციენტი = 1 / ალბათობა; თუ ის ზღვარზე დაბალია — ფსონი ზედმეტად აშკარაა
+      else if (1 / it.p < minOdd) continue;
+      else it.est = 1 / it.p;
+    }
     if (it.fam === 'ah' && it.label.includes('+')) continue; // „+1.5“ ფორა ორმაგ შანსს იმეორებს
     const k = it.fam + (it.dir || '') + (it.fam === 'ps' || it.fam === 'psot' || it.fam === 'pyc' ? it.label : '');
     const b = best[k];

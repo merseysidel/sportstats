@@ -1,8 +1,8 @@
 // ===================== SportStats — ინტერფეისი =====================
-import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611251608';
-import { buildMarkets, aiPicks, explain, checkItem, tn, pickName } from './markets.js?v=202611251608';
-import { traits, patterns, keyAbsences, standings } from './insights.js?v=202611251608';
-import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611251608';
+import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611251616';
+import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor } from './markets.js?v=202611251616';
+import { traits, patterns, keyAbsences, standings } from './insights.js?v=202611251616';
+import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611251616';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -29,7 +29,7 @@ const ARCH = +new URLSearchParams(location.search).get('archive') || null; // �
 const BASE = ARCH ? `data/archive/${ARCH}/` : 'data/';
 const predCache = new Map();
 function pred(f) {
-  if (!predCache.has(f.i)) { const pr = predict(f); const mk = buildMarkets(pr); predCache.set(f.i, { pr, mk, picks: aiPicks(mk, MIN) }); }
+  if (!predCache.has(f.i)) { const pr = predict(f); const mk = buildMarkets(pr); predCache.set(f.i, { pr, mk, picks: aiPicks(mk, MIN, 8, f) }); }
   return predCache.get(f.i);
 }
 
@@ -41,6 +41,7 @@ async function boot() {
   if (ARCH) cfg.season = ARCH;
   let state = {}; try { state = await j(BASE + 'state.json'); } catch (e) { }
   try { DB.h2h = await j('data/h2h.json'); } catch (e) { DB.h2h = {}; }
+  try { DB.odds = ARCH ? {} : await j('data/odds.json'); } catch (e) { DB.odds = {}; }
   const comps = {}, players = {}, inj = {};
   await Promise.all(cfg.competitions.map(async c => {
     try { comps[c.code] = await j(`${BASE}comp/${c.code}.json`); } catch (e) { }
@@ -179,7 +180,7 @@ function homeView() {
     return h + `<div class="card">` + all.map(({ f, pr, p }) => {
       const c = checkItem(f, p);
       return `<a class="pickrow" href="#/m/${f.i}"><span class="tm">${hhmm(f.t)}</span><span class="pm">${esc(tn(f.h))} – ${esc(tn(f.a))}<small>${esc(compName(f.c))}</small></span>
-        <span class="pk">${esc(pickName(p))}<small>${esc(p.group.replace(/\s*\(.*\)$/, ''))}</small></span><span class="pct ${pcls(p.p)}">${P(p.p)}</span>${c == null ? '<span class="ck"></span>' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅' : '❌'}</span>`}</a>`;
+        <span class="pk">${esc(pickName(p))}<small>${esc(p.group.replace(/\s*\(.*\)$/, ''))}</small></span><span class="pct ${pcls(p.p)}">${P(p.p)}</span><span class="odd">${p.odd ? p.odd.toFixed(2) : p.est ? '~' + p.est.toFixed(2) : '—'}</span>${c == null ? '<span class="ck"></span>' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅' : '❌'}</span>`}</a>`;
     }).join('') + `</div>`;
   }
   const byComp = {};
@@ -256,7 +257,7 @@ function overview(f, pr, mk, picks) {
   if (!picks.length) h += `<div class="empty sm">ამ მატჩზე ${Math.round(MIN * 100)}%-ზე მაღალი ალბათობის ფსონი ვერ მოიძებნა.</div>`;
   for (const p of picks) {
     const c = checkItem(f, p);
-    h += `<div class="pick"><div class="ph"><span class="pct big ${pcls(p.p)}">${P(p.p)}</span><div><b>${esc(pickName(p))}</b><small>${esc(p.group)}</small></div>${c == null ? '' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅ გამართლდა' : '❌ ვერ გამართლდა'}</span>`}</div>
+    h += `<div class="pick"><div class="ph"><span class="pct big ${pcls(p.p)}">${P(p.p)}</span><div><b>${esc(pickName(p))}</b><small>${esc(p.group)}</small></div>${p.odd ? `<span class="oddbox"><b>${p.odd.toFixed(2)}</b><small>${esc(p.book)}${p.value > 0.02 ? ` · value +${Math.round(p.value * 100)}%` : ''}</small></span>` : p.est ? `<span class="oddbox"><b class="mut">~${p.est.toFixed(2)}</b><small>სამართლიანი (ბუკ. ხაზი არ არის)</small></span>` : ''}${c == null ? '' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅ გამართლდა' : '❌ ვერ გამართლდა'}</span>`}</div>
       <p>${esc(explainPick(pr, p))}</p></div>`;
   }
   const ns = numSentence(f);
@@ -301,8 +302,9 @@ const traitChips = tr => tr.length ? `<div class="chips">${tr.map(t => `<span cl
 
 function marketGroups(f, groups) {
   return `<div class="mgrid">` + groups.map(g => `<div class="card mg"><h4>${esc(g.title)}</h4>${g.note ? `<div class="mut small">${esc(g.note)}</div>` : ''}${g.items.map(it => {
-    const c = checkItem(f, it);
-    return `<div class="mi ${pcls(it.p)}"><span>${esc(it.label)}</span><span class="pb"><i style="width:${Math.round(it.p * 100)}%"></i></span><b>${P(it.p)}</b>${c == null ? '<em></em>' : `<em>${c ? '✅' : '❌'}</em>`}</div>`;
+    const c = checkItem(f, it), o = oddsFor(f, it);
+    const ot = o && o.odd ? `<u class="${o.odd * it.p > 1.03 ? 'val' : ''}" title="${esc(o.book)}">${o.odd.toFixed(2)}</u>` : o && o.absent ? '<u class="mut" title="ბუკმეკერი არ სთავაზობს">—</u>' : '<u></u>';
+    return `<div class="mi ${pcls(it.p)}"><span>${esc(it.label)}</span><span class="pb"><i style="width:${Math.round(it.p * 100)}%"></i></span><b>${P(it.p)}</b>${ot}${c == null ? '<em></em>' : `<em>${c ? '✅' : '❌'}</em>`}</div>`;
   }).join('')}</div>`).join('') + `</div>`;
 }
 
@@ -416,7 +418,7 @@ function matchRow(f) {
     <span class="teams"><span>${logo(f.h)}${esc(tn(f.h))}</span><span>${logo(f.a)}${esc(tn(f.a))}</span></span>
     <span class="sc">${fin ? `<b>${f.g[0]}</b><b>${f.g[1]}</b>` : ''}</span>
     <span class="odds"><i class="${pcls(pr.p1)}">1 <b>${P(pr.p1)}</b></i><i class="${pcls(pr.px)}">X <b>${P(pr.px)}</b></i><i class="${pcls(pr.p2)}">2 <b>${P(pr.p2)}</b></i></span>
-    <span class="best">${top ? `<span class="chip ${pcls(top.p)}">${esc(pickName(top))} · ${P(top.p)}</span>${c1 == null ? '' : c1 ? ' ✅' : ' ❌'}<small>${picks.length > 1 ? `+${picks.length - 1} ფსონი` : ''}</small>` : `<small class="mut">${Math.round(MIN * 100)}%+ ფსონი არ არის</small>`}</span>
+    <span class="best">${top ? `<span class="chip ${pcls(top.p)}">${esc(pickName(top))} · ${P(top.p)}${top.odd ? ` · <b>${top.odd.toFixed(2)}</b>` : top.est ? ` · ~${top.est.toFixed(2)}` : ''}</span>${c1 == null ? '' : c1 ? ' ✅' : ' ❌'}<small>${picks.length > 1 ? `+${picks.length - 1} ფსონი` : ''}</small>` : `<small class="mut">${Math.round(MIN * 100)}%+ ფსონი არ არის</small>`}</span>
   </a>`;
 }
 function compView(code) {
@@ -566,7 +568,7 @@ async function runAccuracy() {
     if (job !== accJob) return;
     const f = fx[i];
     const { pr, mk } = pred(f);
-    const picks = aiPicks(mk, 0.7, 99);
+    const picks = aiPicks(mk, 0.7, 99, f);
     const g = f.g, res = g[0] > g[1] ? 0 : g[0] === g[1] ? 1 : 2, pp = [pr.p1, pr.px, pr.p2];
     main.n++; if (pp.indexOf(Math.max(...pp)) === res) main.top1x2++;
     if ((pr.over(pr.tot, 2.5) >= 0.5) === (g[0] + g[1] > 2.5)) main.o25++;

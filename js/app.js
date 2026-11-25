@@ -34,6 +34,7 @@ async function boot() {
   $('#view').innerHTML = '<div class="loading">მონაცემები იტვირთება…</div>';
   const cfg = await j('config.json');
   let state = {}; try { state = await j('data/state.json'); } catch (e) { }
+  try { DB.h2h = await j('data/h2h.json'); } catch (e) { DB.h2h = {}; }
   const comps = {}, players = {}, inj = {};
   await Promise.all(cfg.competitions.map(async c => {
     try { comps[c.code] = await j(`data/comp/${c.code}.json`); } catch (e) { }
@@ -77,7 +78,7 @@ function sidebar() {
 function footer() {
   const s = DB.state || {}, pg = s.progress;
   const upd = s.last_run ? new Date(s.last_run).toLocaleString('ka-GE', { dateStyle: 'short', timeStyle: 'short' }) : '—';
-  $('#foot').innerHTML = `<span>სეზონი ${DB.cfg.season}/${String(DB.cfg.season + 1).slice(2)}${ST.sim ? ' · <b class="sim">საცდელი რეჟიმი</b>' : ''}</span>
+  $('#foot').innerHTML = `<span>სეზონი ${DB.cfg.season}-${DB.cfg.season + 1}${ST.sim ? ' · <b class="sim">საცდელი რეჟიმი</b>' : ''}</span>
     <span>ბოლო განახლება: ${upd}</span>${pg ? `<span>დეტალური სტატები: ${pg.detailed}/${pg.finished} მატჩი</span>` : ''}
     <span>ნუმეროლოგია: ${NUM.source === 'sheet' ? 'Google Sheet' : 'ჩაშენებული ასლი'}</span>
     <a class="btn sm" target="_blank" href="https://github.com/merseysidel/sportstats/actions/workflows/update.yml">⟳ განახლება</a>`;
@@ -143,7 +144,7 @@ function homeView() {
   const t0 = dayStart(ST.date), t1 = t0 + 864e5;
   const fx = DB.fixtures.filter(f => f.t >= t0 && f.t < t1);
   let h = `<div class="head"><h1>დღის მატჩები</h1>${seg('mode', [['list', 'მატჩები'], ['picks', 'AI ფსონები']], ST.mode)}</div>` + dateBar();
-  if (ST.sim) h += `<div class="note">🧪 საცდელი რეჟიმი: ${DB.cfg.season}/${String(DB.cfg.season + 1).slice(2)} სეზონი (აგვისტო ${DB.cfg.season} – მაისი ${DB.cfg.season + 1}). პროგნოზი ითვლება მხოლოდ მატჩამდე არსებული მონაცემებით, ამიტომ ✅/❌ რეალურ შედეგს უჩვენებს.</div>`;
+  if (ST.sim) h += `<div class="note">🧪 საცდელი რეჟიმი: ${DB.cfg.season}-${DB.cfg.season + 1} სეზონი. პროგნოზი ითვლება მხოლოდ მატჩამდე არსებული მონაცემებით, ამიტომ ✅/❌ რეალურ შედეგს უჩვენებს.</div>`;
   if (!fx.length) return h + `<div class="empty">ამ დღეს ჩვენს ტურნირებში მატჩი არ არის. გამოიყენე ⏮ ⏭ უახლოესი სათამაშო დღისთვის.</div>`;
   if (ST.mode === 'picks') {
     const all = [];
@@ -240,6 +241,8 @@ function overview(f, pr, mk, picks) {
   const rf = pr.ref;
   h += `<div class="card"><h3>👨‍⚖️ მსაჯი${rf ? ': ' + esc(rf.name) : ''}</h3>${rf && rf.n ? `<div class="kgrid">
     <div><span>მატჩი</span><b>${rf.n}</b></div><div><span>ჯარიმა/მატჩი</span><b>${f1(rf.foul)}</b></div><div><span>ყვითელი/მატჩი</span><b>${f1(rf.yc)}</b></div><div><span>წითელი/მატჩი</span><b>${f1(rf.rc)}</b></div><div><span>პენალტი/მატჩი</span><b>${f1(rf.pen)}</b></div></div>` : '<div class="mut small">მსაჯის მონაცემი ჯერ არ არის</div>'}</div>`;
+  const hs = h2hSummary(f, h2hData(f));
+  if (hs) h += `<div class="card"><h3>🤝 H2H (${hs.n} მატჩი)</h3><div class="kgrid"><div><span>${esc(tn(f.h))}</span><b>${hs.w}</b></div><div><span>ფრე</span><b>${hs.d}</b></div><div><span>${esc(tn(f.a))}</span><b>${hs.l}</b></div><div><span>გოლები/მატჩი</span><b>${f1(hs.avg)}</b></div><div><span>მეტი 2.5</span><b>${P(hs.o25)}</b></div><div><span>BTTS</span><b>${P(hs.btts)}</b></div></div></div>`;
   // traits + patterns
   for (const [tid, ven] of [[f.h, 'home'], [f.a, 'away']]) {
     const tr = traits(tid, f.t), pt = patterns(tid, f.t, ven);
@@ -292,11 +295,34 @@ function comparison(a, b, before, matchMode) {
 const form = fm => `<span class="form">${(fm || []).map(r => `<i class="${r}">${{ W: 'მ', D: 'ფ', L: 'წ' }[r]}</i>`).join('')}</span>`;
 const bucketBar = (b, n) => n ? `<span class="bk">${b.map(x => `<i style="height:${Math.round(x / Math.max(...b, 1) * 100)}%" title="${x}"></i>`).join('')}</span>` : '—';
 
+function h2hData(f) {
+  const key = [f.h, f.a].sort((x, y) => x - y).join('-');
+  const ext = (DB.h2h || {})[key];
+  if (ext) return ext.filter(r => r[0] < f.d.slice(0, 10));
+  // ჩვენი ბაზიდან (მიმდინარე სეზონი)
+  return DB.fixtures.filter(x => isFin(x) && x.t < f.t && ((x.h === f.h && x.a === f.a) || (x.h === f.a && x.a === f.h)))
+    .map(x => [x.d.slice(0, 10), x.h, x.a, x.g[0], x.g[1], compName(x.c), tn(x.h), tn(x.a), x.ht[0], x.ht[1]]).reverse();
+}
+function h2hSummary(f, list) {
+  const n = list.length; if (!n) return null;
+  let w = 0, d = 0, l = 0, g = 0, o25 = 0, btts = 0;
+  for (const r of list) {
+    const hg = r[1] === f.h ? r[3] : r[4], ag = r[1] === f.h ? r[4] : r[3];
+    if (hg > ag) w++; else if (hg < ag) l++; else d++;
+    g += r[3] + r[4]; if (r[3] + r[4] > 2.5) o25++; if (r[3] > 0 && r[4] > 0) btts++;
+  }
+  return { n, w, d, l, avg: g / n, o25: o25 / n, btts: btts / n };
+}
 function h2h(f) {
-  const list = DB.fixtures.filter(x => isFin(x) && ((x.h === f.h && x.a === f.a) || (x.h === f.a && x.a === f.h)) && x.i !== f.i);
-  let h = `<div class="card"><h3>პირისპირ (ჩვენს ბაზაში)</h3>`;
-  h += list.length ? list.map(x => `<a class="mrow sm" href="#/m/${x.i}"><span class="tm">${dlabel(x.t)}</span><span class="teams"><span>${logo(x.h)}${esc(tn(x.h))}</span><span>${logo(x.a)}${esc(tn(x.a))}</span></span><span class="sc"><b>${x.g[0]}</b><b>${x.g[1]}</b></span><span class="mut small">${esc(compName(x.c))}</span></a>`).join('') : '<div class="mut small">ამ სეზონში ერთმანეთს ჯერ არ შეხვედრიან.</div>';
-  return h + `<div class="note">ბოლო 10–15 წლის სრული H2H ისტორია ფასიან (Pro) პაკეტზე გადასვლის მერე ჩაირთვება — უფასო პაკეტი მხოლოდ 2022–2024 სეზონებს იძლევა.</div></div>`;
+  const list = h2hData(f), s = h2hSummary(f, list);
+  const ext = !!(DB.h2h || {})[[f.h, f.a].sort((x, y) => x - y).join('-')];
+  let h = `<div class="card"><h3>პირისპირ ${ext ? `(ბოლო ${DB.cfg.h2h_years || 15} წელი)` : '(ჩვენს ბაზაში)'}</h3>`;
+  if (s) h += `<div class="kgrid">
+    <div><span>მატჩი</span><b>${s.n}</b></div><div><span>${esc(tn(f.h))} მოიგო</span><b>${s.w}</b></div><div><span>ფრე</span><b>${s.d}</b></div><div><span>${esc(tn(f.a))} მოიგო</span><b>${s.l}</b></div>
+    <div><span>გოლები/მატჩი</span><b>${f1(s.avg)}</b></div><div><span>მეტი 2.5</span><b>${P(s.o25)}</b></div><div><span>ორივე იტანს</span><b>${P(s.btts)}</b></div></div><div style="height:10px"></div>`;
+  h += list.length ? `<table class="tbl"><thead><tr><th>თარიღი</th><th>მატჩი</th><th>ანგარიში</th><th>ტაიმი</th><th>ტურნირი</th></tr></thead><tbody>${list.map(r => `<tr><td>${fmtDate(r[0])}</td><td>${esc(r[6])} – ${esc(r[7])}</td><td><b>${r[3]}–${r[4]}</b></td><td class="mut">${r[8] != null ? `${r[8]}–${r[9]}` : ''}</td><td class="mut">${esc(r[5])}</td></tr>`).join('')}</tbody></table>` : '<div class="mut small">ერთმანეთს ჯერ არ შეხვედრიან.</div>';
+  if (!ext) h += `<div class="note">${DB.cfg.h2h_years || 15}-წლიანი H2H ავტომატურად ჩაიტვირთება მატჩამდე ${DB.cfg.h2h_days_ahead || 7} დღით ადრე.</div>`;
+  return h + `</div>`;
 }
 
 // -------------------------------------------------- ნუმეროლოგია

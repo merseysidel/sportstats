@@ -1,6 +1,6 @@
 // ===================== ფსონების კატალოგი + AI ფსონები (შაბლონური ტექსტით) =====================
-import { CALIB } from './calib.js?v=202611251715';
-import { DB, S, scorerProbs } from './engine.js?v=202611251715';
+import { CALIB } from './calib.js?v=202611251724';
+import { DB, S, scorerProbs } from './engine.js?v=202611251724';
 
 const fmt1 = x => x == null ? '—' : (Math.round(x * 10) / 10).toString();
 export const tn = id => DB.teams[id]?.name || '#' + id;
@@ -320,4 +320,23 @@ export function pickName(p) {
   const m = g.match(/^(.*) — (გოლები|კუთხურები)$/);
   if (m) return `${m[1]} ${m[2] === 'გოლები' ? 'გოლები' : 'კუთხ.'} ${p.label}`;
   return `${g}: ${p.label}`;
+}
+
+// -------------------------------------------------- 💎 Value ფსონები
+// კოეფიციენტი 1.50–2.50, მოდელის ალბათობა ≥55% და ბუკმეკერისაზე მაღალი (p × კოეფ. 1.04–1.25)
+export function valuePicks(mk, f, max = 6) {
+  if (!f || !DB.odds?.[f.i]) return [];
+  const SKIP = new Set(['cs', 'exg', 'htft', 'hh', 'oe', 'bttso', 'poss', 'h2r', 'rc', 'cs1', 'wtn', 'ps', 'pa', 'psot', 'pyc']);
+  const best = {};
+  for (const gr of [...mk.R, ...mk.ST, ...mk.OT]) for (const it0 of gr.items) {
+    if (SKIP.has(it0.fam) || it0.p < 0.55) continue;
+    const o = oddsFor(f, it0); if (!o || !o.odd) continue;
+    if (o.odd < 1.5 || o.odd > 2.5) continue;
+    const ev = it0.p * o.odd;
+    if (ev < 1.04 || ev > 1.25) continue; // რეალური value ჩვეულებრივ +4…+25%-ია; მეტი — სავარაუდოდ მოდელის შეცდომა
+    const it = { ...it0, group: gr.title, odd: o.odd, book: o.book, value: ev - 1 };
+    const k = it.fam + (it.dir || '');
+    if (!best[k] || ev > best[k].p * best[k].odd) best[k] = it;
+  }
+  return Object.values(best).sort((a, b) => b.value - a.value).slice(0, max);
 }

@@ -1,6 +1,6 @@
 // ===================== ნუმეროლოგია =====================
 // წყარო: Google Sheet „ნუმეროლოგია — ბაზა“ (იგივე, რაც footballnumerology საიტზე); ვერ ჩატვირთვისას — ჩაშენებული ასლი.
-import { SEED } from './numseed.js?v=202611251715';
+import { SEED } from './numseed.js?v=202611251724';
 
 const SHEET_ID = '1rQFxc86UBC2obLmz_j9o6kT1Ceu2KGYN_YHLxCTVVrI', GID = '360651577';
 const URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${GID}&t=`;

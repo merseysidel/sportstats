@@ -1,8 +1,8 @@
 // ===================== SportStats — ინტერფეისი =====================
-import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611251715';
-import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor } from './markets.js?v=202611251715';
-import { traits, patterns, keyAbsences, standings, restInfo, motivation, coachInfo, scenarios } from './insights.js?v=202611251715';
-import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611251715';
+import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611251724';
+import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor, valuePicks } from './markets.js?v=202611251724';
+import { traits, patterns, keyAbsences, standings, restInfo, motivation, coachInfo, scenarios } from './insights.js?v=202611251724';
+import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611251724';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -29,7 +29,7 @@ const ARCH = +new URLSearchParams(location.search).get('archive') || null; // �
 const BASE = ARCH ? `data/archive/${ARCH}/` : 'data/';
 const predCache = new Map();
 function pred(f) {
-  if (!predCache.has(f.i)) { const pr = predict(f); const mk = buildMarkets(pr); predCache.set(f.i, { pr, mk, picks: aiPicks(mk, MIN, 20, f) }); }
+  if (!predCache.has(f.i)) { const pr = predict(f); const mk = buildMarkets(pr); predCache.set(f.i, { pr, mk, picks: aiPicks(mk, MIN, 20, f), vpicks: valuePicks(mk, f) }); }
   return predCache.get(f.i);
 }
 
@@ -198,12 +198,19 @@ function builder() {
 function homeView() {
   const t0 = dayStart(ST.date), t1 = t0 + 864e5;
   const fx = DB.fixtures.filter(f => f.t >= t0 && f.t < t1);
-  let h = `<div class="head"><h1>დღის მატჩები</h1>${seg('mode', [['list', 'მატჩები'], ['picks', 'AI ფსონები']], ST.mode)}</div>` + dateBar();
+  let h = `<div class="head"><h1>დღის მატჩები</h1>${seg('mode', [['list', 'მატჩები'], ['picks', 'AI ფსონები'], ['value', '💎 Value']], ST.mode)}</div>` + dateBar();
   if (ST.sim) h += `<div class="note">${ARCH ? '📁 არქივი' : '🧪 საცდელი რეჟიმი'}: ${DB.cfg.season}-${DB.cfg.season + 1} სეზონი. პროგნოზი ითვლება მხოლოდ მატჩამდე არსებული მონაცემებით, ამიტომ ✅/❌ რეალურ შედეგს უჩვენებს.</div>`;
   if (!fx.length) return h + `<div class="empty">ამ დღეს ჩვენს ტურნირებში მატჩი არ არის. გამოიყენე ⏮ ⏭ უახლოესი სათამაშო დღისთვის.</div>` + builder();
-  if (ST.mode === 'picks') {
+  if (ST.mode === 'picks' || ST.mode === 'value') {
     const all = [];
-    for (const f of fx) { const { pr, picks } = pred(f); for (const p of picks) all.push({ f, pr, p }); }
+    for (const f of fx) { const { pr, picks, vpicks } = pred(f); for (const p of (ST.mode === 'value' ? vpicks : picks)) all.push({ f, pr, p }); }
+    if (ST.mode === 'value') {
+      all.sort((a, b) => b.p.value - a.p.value);
+      h += `<div class="note">💎 Value: კოეფიციენტი 1.50–2.50, მოდელის ალბათობა 55%+ და ბუკმეკერის შეფასებაზე 4–25%-ით მაღალი. ცალკე ფსონი ნაკლებად სანდოა, ვიდრე 70%+, მაგრამ გრძელვადიან მოგებას სწორედ ასეთი ფსონები იძლევა.</div>`;
+      if (!all.length) return h + `<div class="empty">ამ დღეს value ფსონი ვერ მოიძებნა (ან კოეფიციენტები ჯერ არ არის ჩატვირთული).</div>` + builder();
+      return h + `<div class="card">` + all.map(({ f, p }) => { const c = checkItem(f, p);
+        return `<a class="pickrow" href="#/m/${f.i}"><span class="tm">${hhmm(f.t)}</span><span class="pm">${esc(tn(f.h))} – ${esc(tn(f.a))}<small>${esc(compName(f.c))}</small></span><span class="pk">${esc(pickName(p))}<small>value +${Math.round(p.value * 100)}% · ბუკმეკერი ${P(1 / p.odd)}</small></span><span class="pct ${pcls(p.p)}">${P(p.p)}</span><span class="odd">${p.odd.toFixed(2)}</span>${c == null ? '<span class="ck"></span>' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅' : '❌'}</span>`}</a>`; }).join('') + `</div>` + builder();
+    }
     all.sort((a, b) => b.p.p - a.p.p);
     const hits = all.map(x => checkItem(x.f, x.p)).filter(x => x != null);
     if (hits.length) h += `<div class="kpis"><div><b>${hits.filter(Boolean).length}/${hits.length}</b><span>გამართლდა</span></div><div><b>${P(hits.filter(Boolean).length / hits.length)}</b><span>სიზუსტე</span></div></div>`;
@@ -290,6 +297,9 @@ function overview(f, pr, mk, picks) {
     h += `<div class="pick"><div class="ph"><span class="pct big ${pcls(p.p)}">${P(p.p)}</span><div><b>${esc(pickName(p))}</b><small>${esc(p.group)}</small></div>${p.odd ? `<span class="oddbox"><b>${p.odd.toFixed(2)}</b><small>${esc(p.book)}${p.value > 0.02 ? ` · value +${Math.round(p.value * 100)}%` : ''}</small></span>` : p.est ? `<span class="oddbox"><b class="mut">~${p.est.toFixed(2)}</b><small>სამართლიანი (ბუკ. ხაზი არ არის)</small></span>` : ''}${c == null ? '' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅ გამართლდა' : '❌ ვერ გამართლდა'}</span>`}</div>
       <p>${esc(explainPick(pr, p))}</p></div>`;
   }
+  const vp = pred(f).vpicks;
+  if (vp.length) h += `</div><div class="card"><h3>💎 Value ფსონები <small>(1.50–2.50, მოდელი > ბუკმეკერი)</small></h3>${vp.map(p => { const c = checkItem(f, p);
+    return `<div class="pick"><div class="ph"><span class="pct big ${pcls(p.p)}">${P(p.p)}</span><div><b>${esc(pickName(p))}</b><small>${esc(p.group)} · ბუკმეკერი: ${P(1 / p.odd)}</small></div><span class="oddbox"><b>${p.odd.toFixed(2)}</b><small>${esc(p.book)} · value +${Math.round(p.value * 100)}%</small></span>${c == null ? '' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅' : '❌'}</span>`}</div><p>${esc(explainPick(pred(f).pr, p))}</p></div>`; }).join('')}`;
   const ns = numSentence(f);
   if (ns) h += `<div class="pick num"><div class="ph"><span class="pct big">🔢</span><div><b>ნუმეროლოგია (1X2 / ორმაგი შანსი)</b></div></div><p>${ns}</p></div>`;
   h += `</div>`;
@@ -615,6 +625,7 @@ async function runAccuracy() {
   const job = ++accJob, before = dayStart(ST.date) + 864e5;
   const fx = DB.fixtures.filter(f => isFin(f) && f.t < before && teamRows(f.h, f.t).length >= 5 && teamRows(f.a, f.t).length >= 5);
   const fam = {}, byP = {}, byComp = {};
+  const roi = { ai: [0, 0, 0], val: [0, 0, 0] }; // [ფსონი, მოგებული, მოგება ერთეულებში]
   let main = { n: 0, top1x2: 0, o25: 0, btts: 0 };
   for (let i = 0; i < fx.length; i++) {
     if (job !== accJob) return;
@@ -625,6 +636,8 @@ async function runAccuracy() {
     main.n++; if (pp.indexOf(Math.max(...pp)) === res) main.top1x2++;
     if ((pr.over(pr.tot, 2.5) >= 0.5) === (g[0] + g[1] > 2.5)) main.o25++;
     const pb = (1 - pr.hF[0]) * (1 - pr.aF[0]); if ((pb >= 0.5) === (g[0] > 0 && g[1] > 0)) main.btts++;
+    for (const p of picks) { if (p.p < MIN || !p.odd) continue; const c = checkItem(f, p); if (c == null) continue; roi.ai[0]++; roi.ai[1] += c; roi.ai[2] += c ? p.odd - 1 : -1; }
+    for (const p of valuePicks(mk, f)) { const c = checkItem(f, p); if (c == null) continue; roi.val[0]++; roi.val[1] += c; roi.val[2] += c ? p.odd - 1 : -1; }
     for (const p of picks) {
       const c = checkItem(f, p); if (c == null) continue;
       const b = p.p >= 0.9 ? '90%+' : p.p >= 0.85 ? '85–90%' : p.p >= 0.8 ? '80–85%' : p.p >= 0.75 ? '75–80%' : '70–75%';
@@ -640,6 +653,7 @@ async function runAccuracy() {
   const tot = Object.values(fam).reduce((s, x) => [s[0] + x[0], s[1] + x[1]], [0, 0]);
   const row = ([k, [a, n]]) => `<tr><td>${esc(k)}</td><td>${n}</td><td>${a}</td><td><b class="${a / n >= 0.7 ? 'okc' : a / n < 0.6 ? 'noc' : ''}">${P(a / n)}</b></td></tr>`;
   $('#acc').innerHTML = `<div class="kpis"><div><b>${main.n}</b><span>შემოწმებული მატჩი</span></div><div><b>${P(tot[0] / tot[1])}</b><span>AI ფსონები (${tot[1]})</span></div><div><b>${P(main.top1x2 / main.n)}</b><span>1X2 ფავორიტი</span></div><div><b>${P(main.o25 / main.n)}</b><span>მეტი/ნაკლები 2.5</span></div><div><b>${P(main.btts / main.n)}</b><span>BTTS</span></div></div>
+    <h3>💰 მოგება (ROI) — თითო ფსონზე 1 ლარი</h3>${[['AI ფსონები (70%+, ბუკმეკერის კოეფიციენტით)', roi.ai], ['💎 Value ფსონები', roi.val]].map(([t, r]) => `<div class="roi"><b>${t}</b>${r[0] ? `<span>${r[0]} ფსონი · ${r[1]} მოგებული (${P(r[1] / r[0])})</span><span class="${r[2] >= 0 ? 'okc' : 'noc'}">${r[2] >= 0 ? '+' : ''}${r[2].toFixed(2)} ლარი · ROI ${r[2] >= 0 ? '+' : ''}${Math.round(r[2] / r[0] * 100)}%</span>` : '<span class="mut">ჯერ მონაცემი არ არის — კოეფიციენტების შენახვა 25 ნოემბრიდან დაიწყო, დასრულებული მატჩები თანდათან დაემატება.</span>'}</div>`).join('')}
     <div class="grid2"><div><h3>ალბათობის მიხედვით</h3><table class="tbl"><thead><tr><th>დიაპაზონი</th><th>ფსონი</th><th>გამართლდა</th><th>%</th></tr></thead><tbody>${['70–75%', '75–80%', '80–85%', '85–90%', '90%+'].filter(k => byP[k]).map(k => row([k + (parseInt(k) < MIN * 100 ? ' (არ ჩანს)' : ''), byP[k]])).join('')}</tbody></table>
     <h3>ტურნირების მიხედვით</h3><table class="tbl"><thead><tr><th>ტურნირი</th><th>ფსონი</th><th>გამართლდა</th><th>%</th></tr></thead><tbody>${Object.entries(byComp).map(([k, v]) => row([compName(k), v])).join('')}</tbody></table></div>
     <div><h3>ბაზრების მიხედვით</h3><table class="tbl"><thead><tr><th>ბაზარი</th><th>ფსონი</th><th>გამართლდა</th><th>%</th></tr></thead><tbody>${Object.entries(fam).sort((a, b) => b[1][1] - a[1][1]).map(row).join('')}</tbody></table></div></div>

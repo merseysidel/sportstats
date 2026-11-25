@@ -124,3 +124,4 @@ table.ctx{width:100%;border-collapse:collapse;font-size:13px}.ctx th{text-align:
 .ticket{background:var(--p2);border-radius:9px;padding:10px}.ticket h4{color:#fff;font-size:14px;margin:0}
 .leg{display:grid;grid-template-columns:1fr 1fr 50px 44px 20px;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid var(--p3);font-size:12px}.leg b{display:block;font-size:12px}.leg:hover{background:var(--p3)}
 .tsum{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:13px}.tsum b{color:var(--y);font-size:15px}
+.roi{display:flex;gap:16px;flex-wrap:wrap;align-items:center;background:var(--p2);border-radius:8px;padding:9px 12px;margin-bottom:6px;font-size:13px}.roi b{min-width:260px}

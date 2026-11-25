@@ -1,10 +1,10 @@
-"""API-Football-ის საცდელი შემოწმება: გასაღები, მიმდინარე სეზონი, მატჩის სტატები, დაზიანებები.
-იყენებს მაქსიმუმ ~7 მოთხოვნას დღიური 100-დან. გასაღებს არსად ბეჭდავს."""
+"""API-Football-ის საცდელი შემოწმება (2024 სეზონი)."""
 import json, os, sys, urllib.request, urllib.parse
 
 KEY = os.environ.get("API_FOOTBALL_KEY", "").strip()
 BASE = "https://v3.football.api-sports.io/"
 PL = 39  # პრემიერლიგა
+SEASON = 2024  # უფასო პაკეტი: 2022–2024
 
 if not KEY:
     print("❌ API_FOOTBALL_KEY ვერ მოიძებნა Secrets-ში")
@@ -30,23 +30,11 @@ if isinstance(st, dict) and st:
 else:
     print("   ❌ გასაღები არ მუშაობს"); sys.exit(1)
 
-line("2. პრემიერლიგის მიმდინარე სეზონი")
-lg = get("leagues", id=PL, current="true").get("response", [])
-season = None
-if lg:
-    s = lg[0]["seasons"][0]
-    season = s["year"]
-    cov = s.get("coverage", {})
-    print(f"   სეზონი: {season} ({s.get('start')} → {s.get('end')})")
-    print(f"   coverage: {json.dumps(cov, ensure_ascii=False)}")
-
-line(f"3. მატჩები, სეზონი {season}")
-fx = get("fixtures", league=PL, season=season)
+line(f"3. მატჩები, სეზონი {SEASON}")
+fx = get("fixtures", league=PL, season=SEASON)
 games = fx.get("response", [])
 done = [g for g in games if g["fixture"]["status"]["short"] in ("FT", "AET", "PEN")]
 print(f"   სულ მატჩი: {len(games)} | დასრულებული: {len(done)}")
-if fx.get("errors"):
-    print("   👉 როგორც ჩანს, უფასო პაკეტი მიმდინარე სეზონზე წვდომას არ იძლევა")
 
 if done:
     g = done[-1]
@@ -61,14 +49,15 @@ if done:
             print(f"      {x['type']}: {x['value']}")
     types = {x["type"].lower() for t in stats for x in t["statistics"]}
     for want in ("throw", "cross"):
-        print(f"   {'✅' if any(want in t for t in types) else '❌'} '{want}' სტატი {'არის' if any(want in t for t in types) else 'არ არის'}")
+        ok = any(want in t for t in types)
+        print(f"   {'✅' if ok else '❌'} '{want}' სტატი {'არის' if ok else 'არ არის'}")
 
     line("5. მოვლენები (გოლების წუთები)")
     ev = get("fixtures/events", fixture=fid).get("response", [])
     print(f"   მოვლენა: {len(ev)}  მაგ: " + "; ".join(f"{e['time']['elapsed']}' {e['type']}/{e['detail']}" for e in ev[:6]))
 
 line("6. დაზიანებები")
-inj = get("injuries", league=PL, season=season).get("response", [])
+inj = get("injuries", league=PL, season=SEASON).get("response", [])
 print(f"   ჩანაწერი: {len(inj)}  მაგ: " + "; ".join(f"{i['player']['name']} ({i['team']['name']}) - {i['player'].get('reason')}" for i in inj[-3:]))
 
 line("დასრულდა")

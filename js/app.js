@@ -1,8 +1,8 @@
 // ===================== SportStats — ინტერფეისი =====================
-import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611251724';
-import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor, valuePicks } from './markets.js?v=202611251724';
-import { traits, patterns, keyAbsences, standings, restInfo, motivation, coachInfo, scenarios } from './insights.js?v=202611251724';
-import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611251724';
+import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611251728';
+import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor, valuePicks } from './markets.js?v=202611251728';
+import { traits, patterns, keyAbsences, standings, restInfo, motivation, coachInfo, scenarios } from './insights.js?v=202611251728';
+import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611251728';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -206,7 +206,7 @@ function homeView() {
     for (const f of fx) { const { pr, picks, vpicks } = pred(f); for (const p of (ST.mode === 'value' ? vpicks : picks)) all.push({ f, pr, p }); }
     if (ST.mode === 'value') {
       all.sort((a, b) => b.p.value - a.p.value);
-      h += `<div class="note">💎 Value: კოეფიციენტი 1.50–2.50, მოდელის ალბათობა 55%+ და ბუკმეკერის შეფასებაზე 4–25%-ით მაღალი. ცალკე ფსონი ნაკლებად სანდოა, ვიდრე 70%+, მაგრამ გრძელვადიან მოგებას სწორედ ასეთი ფსონები იძლევა.</div>`;
+      h += `<div class="note">💎 Value: კოეფიციენტი 1.50–2.50, მოდელის ალბათობა 55%+ და ბუკმეკერის შეფასებაზე 4–40%-ით მაღალი. ცალკე ფსონი ნაკლებად სანდოა, ვიდრე 70%+, მაგრამ გრძელვადიან მოგებას სწორედ ასეთი ფსონები იძლევა.</div>`;
       if (!all.length) return h + `<div class="empty">ამ დღეს value ფსონი ვერ მოიძებნა (ან კოეფიციენტები ჯერ არ არის ჩატვირთული).</div>` + builder();
       return h + `<div class="card">` + all.map(({ f, p }) => { const c = checkItem(f, p);
         return `<a class="pickrow" href="#/m/${f.i}"><span class="tm">${hhmm(f.t)}</span><span class="pm">${esc(tn(f.h))} – ${esc(tn(f.a))}<small>${esc(compName(f.c))}</small></span><span class="pk">${esc(pickName(p))}<small>value +${Math.round(p.value * 100)}% · ბუკმეკერი ${P(1 / p.odd)}</small></span><span class="pct ${pcls(p.p)}">${P(p.p)}</span><span class="odd">${p.odd.toFixed(2)}</span>${c == null ? '<span class="ck"></span>' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅' : '❌'}</span>`}</a>`; }).join('') + `</div>` + builder();

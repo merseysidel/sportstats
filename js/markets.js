@@ -1,6 +1,6 @@
 // ===================== ფსონების კატალოგი + AI ფსონები (შაბლონური ტექსტით) =====================
-import { CALIB } from './calib.js?v=202611251724';
-import { DB, S, scorerProbs } from './engine.js?v=202611251724';
+import { CALIB } from './calib.js?v=202611251728';
+import { DB, S, scorerProbs } from './engine.js?v=202611251728';
 
 const fmt1 = x => x == null ? '—' : (Math.round(x * 10) / 10).toString();
 export const tn = id => DB.teams[id]?.name || '#' + id;
@@ -323,7 +323,7 @@ export function pickName(p) {
 }
 
 // -------------------------------------------------- 💎 Value ფსონები
-// კოეფიციენტი 1.50–2.50, მოდელის ალბათობა ≥55% და ბუკმეკერისაზე მაღალი (p × კოეფ. 1.04–1.25)
+// კოეფიციენტი 1.50–2.50, მოდელის ალბათობა ≥55% და ბუკმეკერისაზე მაღალი (p × კოეფ. 1.04–1.40)
 export function valuePicks(mk, f, max = 6) {
   if (!f || !DB.odds?.[f.i]) return [];
   const SKIP = new Set(['cs', 'exg', 'htft', 'hh', 'oe', 'bttso', 'poss', 'h2r', 'rc', 'cs1', 'wtn', 'ps', 'pa', 'psot', 'pyc']);
@@ -333,7 +333,7 @@ export function valuePicks(mk, f, max = 6) {
     const o = oddsFor(f, it0); if (!o || !o.odd) continue;
     if (o.odd < 1.5 || o.odd > 2.5) continue;
     const ev = it0.p * o.odd;
-    if (ev < 1.04 || ev > 1.25) continue; // რეალური value ჩვეულებრივ +4…+25%-ია; მეტი — სავარაუდოდ მოდელის შეცდომა
+    if (ev < 1.04 || ev > 1.40) continue; // +40%-ზე მეტი უთანხმოება — სავარაუდოდ მოდელის შეცდომა
     const it = { ...it0, group: gr.title, odd: o.odd, book: o.book, value: ev - 1 };
     const k = it.fam + (it.dir || '');
     if (!best[k] || ev > best[k].p * best[k].odd) best[k] = it;

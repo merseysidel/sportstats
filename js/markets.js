@@ -1,6 +1,6 @@
 // ===================== ფსონების კატალოგი + AI ფსონები (შაბლონური ტექსტით) =====================
-import { CALIB } from './calib.js?v=202611261058';
-import { DB, S, scorerProbs } from './engine.js?v=202611261058';
+import { CALIB } from './calib.js?v=202611261105';
+import { DB, S, scorerProbs } from './engine.js?v=202611261105';
 
 const fmt1 = x => x == null ? '—' : (Math.round(x * 10) / 10).toString();
 export const tn = id => DB.teams[id]?.name || '#' + id;
@@ -225,13 +225,13 @@ function oddsRaw(f, it) {
   return undefined;
 }
 
-// Crystalbet-ის კოეფიციენტის შეფასება Bet365-იდან (26.11.2026-ის 25 შედარებით: საშ. ცდომილება ~4%).
+// Crystalbet-ის კოეფიციენტის შეფასება Bet365-იდან (26.11.2026: 155 შედარება — 1X2, ორმაგი შანსი, DNB, ტოტალი 2.5, BTTS; საშ. ცდომილება ~3.5%).
 // დაბალ კოეფიციენტზე სხვაობა ~1%, მაღალზე მეტი (Crystalbet-ის მარჟა ~11%, Bet365-ის ~6%).
 const MAIN_FAMS = new Set(['1x2', 'dc', 'dnb', 'goals', 'btts', 'ht', 'htg', 'h2g']);
 export const BOOK = { mode: 'cb' };
 try { BOOK.mode = localStorage.getItem('ss_book') || 'cb'; } catch (e) { }
 export function cbOdd(odd, fam) {
-  let r = Math.exp(0.0358 - 0.0951 * Math.log(odd));
+  let r = Math.exp(0.0058 - 0.0797 * Math.log(odd));
   if (!MAIN_FAMS.has(fam)) r *= 0.95;          // სპეციალურ ბაზრებზე (კუთხურები, ბარათები…) მარჟა უფრო მაღალია
   return Math.max(1.01, Math.min(odd, Math.round(odd * r * 100) / 100));
 }

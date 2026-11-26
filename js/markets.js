@@ -1,6 +1,6 @@
 // ===================== ფსონების კატალოგი + AI ფსონები (შაბლონური ტექსტით) =====================
-import { CALIB } from './calib.js?v=202611261105';
-import { DB, S, scorerProbs } from './engine.js?v=202611261105';
+import { CALIB } from './calib.js?v=202611261112';
+import { DB, S, scorerProbs } from './engine.js?v=202611261112';
 
 const fmt1 = x => x == null ? '—' : (Math.round(x * 10) / 10).toString();
 export const tn = id => DB.teams[id]?.name || '#' + id;
@@ -225,20 +225,33 @@ function oddsRaw(f, it) {
   return undefined;
 }
 
-// Crystalbet-ის კოეფიციენტის შეფასება Bet365-იდან (26.11.2026: 155 შედარება — 1X2, ორმაგი შანსი, DNB, ტოტალი 2.5, BTTS; საშ. ცდომილება ~3.5%).
-// დაბალ კოეფიციენტზე სხვაობა ~1%, მაღალზე მეტი (Crystalbet-ის მარჟა ~11%, Bet365-ის ~6%).
+// Crystalbet-ის კოეფიციენტის შეფასება Bet365-იდან.
+// 26.11.2026: 90 მატჩი (9 ტურნირი), 900 შედარება; საშ. ცდომილება ~3.2%.
+// ძირითად ბაზრებს თავისი კოეფიციენტი აქვს, დანარჩენს — ზოგადი ფორმულა (სპეციალურ ბაზრებზე დამატებით −5%).
+const CB_K = { '1': 0.0695, 'X': 0.1372, '2': 0.0888, '1X': -0.0029, '12': 0.0042, 'X2': -0.0211,
+  over: 0.0328, under: 0.0545, yes: 0.0474, no: 0.0672 }, CB_SLOPE = -0.1365;
 const MAIN_FAMS = new Set(['1x2', 'dc', 'dnb', 'goals', 'btts', 'ht', 'htg', 'h2g']);
 export const BOOK = { mode: 'cb' };
 try { BOOK.mode = localStorage.getItem('ss_book') || 'cb'; } catch (e) { }
-export function cbOdd(odd, fam) {
-  let r = Math.exp(0.0058 - 0.0797 * Math.log(odd));
-  if (!MAIN_FAMS.has(fam)) r *= 0.95;          // სპეციალურ ბაზრებზე (კუთხურები, ბარათები…) მარჟა უფრო მაღალია
+function cbKey(it) {
+  if (!it) return null;
+  if (it.fam === '1x2') return it.label[0];
+  if (it.fam === 'dc') return it.label.slice(0, 2);
+  if (it.fam === 'goals') return it.dir === 'o' ? 'over' : 'under';
+  if (it.fam === 'btts') return it.label === 'კი' ? 'yes' : 'no';
+  return null;
+}
+export function cbOdd(odd, fam, it) {
+  const k = cbKey(it || { fam });
+  let r;
+  if (k && CB_K[k] != null) r = Math.exp(CB_K[k] + CB_SLOPE * Math.log(odd));
+  else { r = Math.exp(0.0082 - 0.0834 * Math.log(odd)); if (!MAIN_FAMS.has(fam)) r *= 0.95; }
   return Math.max(1.01, Math.min(odd, Math.round(odd * r * 100) / 100));
 }
 export function oddsFor(f, it) {
   const o = oddsRaw(f, it);
   if (!o || !o.odd || BOOK.mode !== 'cb') return o;
-  return { ...o, raw: o.odd, rawBook: o.book, odd: cbOdd(o.odd, it.fam), book: `Crystalbet ≈ (${o.book} ${o.odd.toFixed(2)})` };
+  return { ...o, raw: o.odd, rawBook: o.book, odd: cbOdd(o.odd, it.fam, it), book: `Crystalbet ≈ (${o.book} ${o.odd.toFixed(2)})` };
 }
 
 // -------------------------------------------------- AI ფსონები

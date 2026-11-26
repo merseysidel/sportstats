@@ -1,6 +1,6 @@
 // ===================== ფსონების კატალოგი + AI ფსონები (შაბლონური ტექსტით) =====================
-import { CALIB } from './calib.js?v=202611261042';
-import { DB, S, scorerProbs } from './engine.js?v=202611261042';
+import { CALIB } from './calib.js?v=202611261047';
+import { DB, S, scorerProbs } from './engine.js?v=202611261047';
 
 const fmt1 = x => x == null ? '—' : (Math.round(x * 10) / 10).toString();
 export const tn = id => DB.teams[id]?.name || '#' + id;
@@ -141,7 +141,12 @@ export function buildMarkets(pr) {
   g(OT, 'გააკეთებს ასისტს', [...top(hs, 'pa', 4), ...top(as, 'pa', 4)].sort((a, b) => b.pa - a.pa).map(p => ({ label: p.name, p: p.pa, fam: 'pa', pl: p })));
   g(OT, 'კარში დარტყმა 1+', [...top(hs, 'psot', 5), ...top(as, 'psot', 5)].sort((a, b) => b.psot - a.psot).map(p => ({ label: p.name, p: p.psot, fam: 'psot', pl: p })));
   g(OT, 'მიიღებს ყვითელს', [...top(hs, 'pyc', 4), ...top(as, 'pyc', 4)].sort((a, b) => b.pyc - a.pyc).map(p => ({ label: p.name, p: p.pyc, fam: 'pyc', pl: p })));
-  for (const gr of [...R, ...ST, ...OT]) for (const it of gr.items) { it.raw = it.p; it.p = calibrate(it.fam, it.p); }
+  for (const gr of [...R, ...ST, ...OT]) for (const it of gr.items) {
+    it.raw = it.p; it.p = calibrate(it.fam, it.p);
+    // მოდელი + ბუკმეკერი: საბოლოო = 65% მოდელი + 35% ბუკმეკერი (მარჟის გარეშე). მოდელის საკუთარი შეფასება ინახება it.pm-ში
+    const o = oddsFor(pr.f, it);
+    if (o && o.odd && o.fair) { it.pm = it.p; it.pb = Math.min(0.99, o.fair); it.p = BLEND_W * it.pm + (1 - BLEND_W) * it.pb; }
+  }
   return { R, ST, OT, hs, as };
 }
 
@@ -149,6 +154,7 @@ export function buildMarkets(pr) {
 // 1) მოთამაშეების ბაზრები: isotonic ცხრილი (მოდელი აქ ზედმეტად თავდაჯერებული იყო, მაგ. „კარში დარტყმა 1+“ 70%+ → რეალურად 60%)
 // 2) 85%-ზე მაღალი ალბათობები ოდნავ იკუმშება (90–95% რეალურად ~87%-ით მართლდებოდა)
 // 3) 1X2 და BTTS ცენტრისკენ იკუმშება (76% → რეალურად ~67%)
+export const BLEND_W = 0.65;
 const PLAYER_FAMS = new Set(['ps', 'pa', 'psot', 'pyc']);
 export function calibrate(fam, p) {
   if (PLAYER_FAMS.has(fam) && CALIB.groups.players) {
@@ -167,12 +173,23 @@ export function calibrate(fam, p) {
 export function oddsFor(f, it) {
   const rec = DB.odds?.[f.i]; if (!rec) return undefined;
   const [book, M] = rec, H = tn(f.h), L = it.label;
+  // fair: ბუკმეკერის ალბათობა მარჟის გარეშე (წყვილის/სამეულის ნორმალიზაციით)
   const ou = (bet, prefix = '') => {
     const b = M[bet]; if (!b) return undefined;
-    const k = `${it.dir === 'o' ? 'Over' : 'Under'} ${it.line}`;
-    return b[k] != null ? { odd: b[k], book } : { absent: true };
+    const k = `${it.dir === 'o' ? 'Over' : 'Under'} ${it.line}`, k2 = `${it.dir === 'o' ? 'Under' : 'Over'} ${it.line}`;
+    if (b[k] == null) return { absent: true };
+    const fair = b[k2] ? (1 / b[k]) / (1 / b[k] + 1 / b[k2]) : (1 / b[k]) / 1.07;
+    return { odd: b[k], book, fair };
   };
-  const pick = (bet, key) => { const b = M[bet]; if (!b) return undefined; return b[key] != null ? { odd: b[key], book } : { absent: true }; };
+  const pick = (bet, key) => {
+    const b = M[bet]; if (!b) return undefined; if (b[key] == null) return { absent: true };
+    const vals = Object.values(b), inv = vals.reduce((s, o) => s + 1 / o, 0);
+    let fair;
+    if (bet === 'Double Chance') fair = (1 / b[key]) / (inv / 2);
+    else if (vals.length >= 2 && vals.length <= 3) fair = (1 / b[key]) / inv;
+    else fair = (1 / b[key]) / 1.08;
+    return { odd: b[key], book, fair };
+  };
   const side = L.startsWith(H) ? 'Home' : 'Away';
   switch (it.fam) {
     case '1x2': return pick('Match Winner', { '1': 'Home', 'X': 'Draw', '2': 'Away' }[L[0]]);
@@ -202,7 +219,7 @@ export function oddsFor(f, it) {
       const b = M['Anytime Goal Scorer']; if (!b || !it.pl) return undefined;
       const last = it.pl.name.split(' ').pop().toLowerCase();
       const k = Object.keys(b).find(x => x.toLowerCase().split(' ').pop() === last);
-      return k ? { odd: b[k], book } : undefined;
+      return k ? { odd: b[k], book, fair: (1 / b[k]) / 1.15 } : undefined;
     }
   }
   return undefined;
@@ -220,8 +237,8 @@ export function aiPicks(mk, min = 0.7, max = 8, f = null) {
       const o = oddsFor(f, it);
       if (o && o.absent) continue;                 // ბუკმეკერი ამ ხაზს არც კი სთავაზობს
       if (o && o.odd < minOdd) continue;           // კოეფიციენტი ზედმეტად დაბალია
-      if (o && it.p * o.odd > 1.6) continue;       // მოდელი ბუკმეკერს ძალიან ეწინააღმდეგება (მაგ. 83% vs 3.00) — სავარაუდოდ მოდელის შეცდომა
-      if (o) { it.odd = o.odd; it.book = o.book; it.value = it.p * o.odd - 1; }
+      if (o && (it.pm ?? it.p) * o.odd > 1.8) continue; // მოდელი ბუკმეკერს 80%-ზე მეტად ეწინააღმდეგება — სავარაუდოდ მოდელის შეცდომა
+      if (o) { it.odd = o.odd; it.book = o.book; it.value = (it.pm ?? it.p) * o.odd - 1; }
       // კოეფიციენტი უცნობია: სამართლიანი კოეფიციენტი = 1 / ალბათობა; თუ ის ზღვარზე დაბალია — ფსონი ზედმეტად აშკარაა
       else if (1 / it.p < minOdd) continue;
       else it.est = 1 / it.p;
@@ -323,17 +340,17 @@ export function pickName(p) {
 }
 
 // -------------------------------------------------- 💎 Value ფსონები
-// კოეფიციენტი 1.50–2.50, მოდელის ალბათობა ≥55% და ბუკმეკერისაზე მაღალი (p × კოეფ. 1.04–1.40)
+// კოეფიციენტი 1.50–2.50, საბოლოო ალბათობა ≥55%, მოდელი ბუკმეკერზე 4–80%-ით მაღალს ხედავს
 export function valuePicks(mk, f, max = 6) {
   if (!f || !DB.odds?.[f.i]) return [];
   const SKIP = new Set(['cs', 'exg', 'htft', 'hh', 'oe', 'bttso', 'poss', 'h2r', 'rc', 'cs1', 'wtn', 'ps', 'pa', 'psot', 'pyc']);
   const best = {};
   for (const gr of [...mk.R, ...mk.ST, ...mk.OT]) for (const it0 of gr.items) {
-    if (SKIP.has(it0.fam) || it0.p < 0.55) continue;
+    if (SKIP.has(it0.fam) || it0.p < 0.55) continue;          // საბოლოო (შერწყმული) ალბათობა ≥55%
     const o = oddsFor(f, it0); if (!o || !o.odd) continue;
     if (o.odd < 1.5 || o.odd > 2.5) continue;
-    const ev = it0.p * o.odd;
-    if (ev < 1.04 || ev > 1.40) continue; // +40%-ზე მეტი უთანხმოება — სავარაუდოდ მოდელის შეცდომა
+    const ev = (it0.pm ?? it0.p) * o.odd;                        // value — მოდელის საკუთარი შეფასებით (მიგნებები არ იჩაგრება)
+    if (ev < 1.04 || ev > 1.80) continue; // +80%-ზე მეტი უთანხმოება — სავარაუდოდ მოდელის შეცდომა
     const it = { ...it0, group: gr.title, odd: o.odd, book: o.book, value: ev - 1 };
     const k = it.fam + (it.dir || '');
     if (!best[k] || ev > best[k].p * best[k].odd) best[k] = it;

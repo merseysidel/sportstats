@@ -1,6 +1,6 @@
 // ===================== Team Traits + AI მიგნებები =====================
-import { DB, teamRows, aggregate, playerLines, playerTotals, injuriesNear, S } from './engine.js?v=202611261042';
-import { tn } from './markets.js?v=202611261042';
+import { DB, teamRows, aggregate, playerLines, playerTotals, injuriesNear, S } from './engine.js?v=202611261047';
+import { tn } from './markets.js?v=202611261047';
 
 const f1 = x => x == null ? '—' : (Math.round(x * 10) / 10).toString();
 const P = x => Math.round(x * 100) + '%';

@@ -1,9 +1,9 @@
 // ===================== SportStats — ინტერფეისი =====================
-import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611261042';
-import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor, valuePicks } from './markets.js?v=202611261042';
-import { traits, patterns, keyAbsences, standings, restInfo, motivation, coachInfo, scenarios } from './insights.js?v=202611261042';
-import { REL } from './reliability.js?v=202611261042';
-import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611261042';
+import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611261047';
+import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor, valuePicks } from './markets.js?v=202611261047';
+import { traits, patterns, keyAbsences, standings, restInfo, motivation, coachInfo, scenarios } from './insights.js?v=202611261047';
+import { REL } from './reliability.js?v=202611261047';
+import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611261047';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -29,6 +29,7 @@ const compName = c => DB.comps[c]?.name || c;
 const ARCH = +new URLSearchParams(location.search).get('archive') || null; // არქივის სეზონი (მაგ. 2025)
 const BASE = ARCH ? `data/archive/${ARCH}/` : 'data/';
 const predCache = new Map();
+const blendTag = it => it.pm != null ? `<small class="blend">🤖 მოდელი <b>${P(it.pm)}</b> · 🏦 ბუკმეკერი <b>${P(it.pb)}</b> · საბოლოო <b>${P(it.p)}</b></small>` : '';
 const relOf = it => REL[it.fam + (it.dir || '')] || REL[it.fam] || null;
 const relTag = it => { const r = relOf(it); return r ? `<span class="rel ${r[0] >= 0.78 ? 'hi' : r[0] < 0.7 ? 'lo' : ''}" title="ამ ბაზარზე AI ფსონები 2025-26 სეზონში ${Math.round(r[0] * 100)}%-ით გამართლდა (${r[1]} ფსონი)">სანდოობა ${Math.round(r[0] * 100)}%</span>` : ''; };
 
@@ -275,10 +276,10 @@ function homeView() {
     for (const f of fx) { const { pr, picks, vpicks } = pred(f); for (const p of (ST.mode === 'value' ? vpicks : picks)) all.push({ f, pr, p }); }
     if (ST.mode === 'value') {
       all.sort((a, b) => b.p.value - a.p.value);
-      h += `<div class="note">💎 Value: კოეფიციენტი 1.50–2.50, მოდელის ალბათობა 55%+ და ბუკმეკერის შეფასებაზე 4–40%-ით მაღალი. ცალკე ფსონი ნაკლებად სანდოა, ვიდრე 70%+, მაგრამ გრძელვადიან მოგებას სწორედ ასეთი ფსონები იძლევა.</div>`;
+      h += `<div class="note">💎 Value: კოეფიციენტი 1.50–2.50, მოდელის ალბათობა 55%+ და ბუკმეკერის შეფასებაზე 4–80%-ით მაღალი. ცალკე ფსონი ნაკლებად სანდოა, ვიდრე 70%+, მაგრამ გრძელვადიან მოგებას სწორედ ასეთი ფსონები იძლევა.</div>`;
       if (!all.length) return h + `<div class="empty">ამ დღეს value ფსონი ვერ მოიძებნა (ან კოეფიციენტები ჯერ არ არის ჩატვირთული).</div>` + builder();
       return h + `<div class="card">` + all.map(({ f, p }) => { const c = checkItem(f, p);
-        return `<a class="pickrow" href="#/m/${f.i}"><span class="tm">${addBtn(f, p)}${hhmm(f.t)}</span><span class="pm">${esc(tn(f.h))} – ${esc(tn(f.a))}<small>${esc(compName(f.c))}</small></span><span class="pk">${esc(pickName(p))}<small>value +${Math.round(p.value * 100)}% · ბუკმეკერი ${P(1 / p.odd)}</small></span><span class="pct ${pcls(p.p)}">${P(p.p)}</span><span class="odd">${p.odd.toFixed(2)}</span>${c == null ? '<span class="ck"></span>' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅' : '❌'}</span>`}</a>`; }).join('') + `</div>` + builder();
+        return `<a class="pickrow" href="#/m/${f.i}"><span class="tm">${addBtn(f, p)}${hhmm(f.t)}</span><span class="pm">${esc(tn(f.h))} – ${esc(tn(f.a))}<small>${esc(compName(f.c))}</small></span><span class="pk">${esc(pickName(p))}<small>value +${Math.round(p.value * 100)}% · მოდელი ${P(p.pm ?? p.p)} · ბუკმეკერი ${P(p.pb ?? 1 / p.odd)}</small></span><span class="pct ${pcls(p.p)}">${P(p.p)}</span><span class="odd">${p.odd.toFixed(2)}</span>${c == null ? '<span class="ck"></span>' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅' : '❌'}</span>`}</a>`; }).join('') + `</div>` + builder();
     }
     all.sort((a, b) => b.p.p - a.p.p);
     const hits = all.map(x => checkItem(x.f, x.p)).filter(x => x != null);
@@ -363,12 +364,12 @@ function overview(f, pr, mk, picks) {
   if (!picks.length) h += `<div class="empty sm">ამ მატჩზე ${Math.round(MIN * 100)}%-ზე მაღალი ალბათობის ფსონი ვერ მოიძებნა.</div>`;
   for (const p of picks) {
     const c = checkItem(f, p);
-    h += `<div class="pick"><div class="ph">${addBtn(f, p)}<span class="pct big ${pcls(p.p)}">${P(p.p)}</span><div><b>${esc(pickName(p))}</b><small>${esc(p.group)} ${relTag(p)}</small></div>${p.odd ? `<span class="oddbox"><b>${p.odd.toFixed(2)}</b><small>${esc(p.book)}${p.value > 0.02 ? ` · value +${Math.round(p.value * 100)}%` : ''}</small></span>` : p.est ? `<span class="oddbox"><b class="mut">~${p.est.toFixed(2)}</b><small>სამართლიანი (ბუკ. ხაზი არ არის)</small></span>` : ''}${c == null ? '' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅ გამართლდა' : '❌ ვერ გამართლდა'}</span>`}</div>
+    h += `<div class="pick"><div class="ph">${addBtn(f, p)}<span class="pct big ${pcls(p.p)}">${P(p.p)}</span><div><b>${esc(pickName(p))}</b><small>${esc(p.group)} ${relTag(p)}</small>${blendTag(p)}</div>${p.odd ? `<span class="oddbox"><b>${p.odd.toFixed(2)}</b><small>${esc(p.book)}${p.value > 0.02 ? ` · value +${Math.round(p.value * 100)}%` : ''}</small></span>` : p.est ? `<span class="oddbox"><b class="mut">~${p.est.toFixed(2)}</b><small>სამართლიანი (ბუკ. ხაზი არ არის)</small></span>` : ''}${c == null ? '' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅ გამართლდა' : '❌ ვერ გამართლდა'}</span>`}</div>
       <p>${esc(explainPick(pr, p))}</p></div>`;
   }
   const vp = pred(f).vpicks;
   if (vp.length) h += `</div><div class="card"><h3>💎 Value ფსონები <small>(1.50–2.50, მოდელი > ბუკმეკერი)</small></h3>${vp.map(p => { const c = checkItem(f, p);
-    return `<div class="pick"><div class="ph">${addBtn(f, p)}<span class="pct big ${pcls(p.p)}">${P(p.p)}</span><div><b>${esc(pickName(p))}</b><small>${esc(p.group)} · ბუკმეკერი: ${P(1 / p.odd)} ${relTag(p)}</small></div><span class="oddbox"><b>${p.odd.toFixed(2)}</b><small>${esc(p.book)} · value +${Math.round(p.value * 100)}%</small></span>${c == null ? '' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅' : '❌'}</span>`}</div><p>${esc(explainPick(pred(f).pr, p))}</p></div>`; }).join('')}`;
+    return `<div class="pick"><div class="ph">${addBtn(f, p)}<span class="pct big ${pcls(p.p)}">${P(p.p)}</span><div><b>${esc(pickName(p))}</b><small>${esc(p.group)} ${relTag(p)}</small>${blendTag(p)}</div><span class="oddbox"><b>${p.odd.toFixed(2)}</b><small>${esc(p.book)} · value +${Math.round(p.value * 100)}%</small></span>${c == null ? '' : `<span class="ck ${c ? 'ok' : 'no'}">${c ? '✅' : '❌'}</span>`}</div><p>${esc(explainPick(pred(f).pr, p))}</p></div>`; }).join('')}`;
   const ns = numSentence(f);
   if (ns) h += `<div class="pick num"><div class="ph"><span class="pct big">🔢</span><div><b>ნუმეროლოგია (1X2 / ორმაგი შანსი)</b></div></div><p>${ns}</p></div>`;
   h += `</div>`;
@@ -430,8 +431,8 @@ const traitChips = tr => tr.length ? `<div class="chips">${tr.map(t => `<span cl
 function marketGroups(f, groups) {
   return `<div class="mgrid">` + groups.map(g => `<div class="card mg"><h4>${esc(g.title)}</h4>${g.note ? `<div class="mut small">${esc(g.note)}</div>` : ''}${g.items.map(it => {
     const c = checkItem(f, it), o = oddsFor(f, it);
-    const ot = o && o.odd ? `<u class="${o.odd * it.p > 1.03 ? 'val' : ''}" title="${esc(o.book)}">${o.odd.toFixed(2)}</u>` : o && o.absent ? '<u class="mut" title="ბუკმეკერი არ სთავაზობს">—</u>' : '<u></u>';
-    return `<div class="mi ${pcls(it.p)}">${addBtn(f, it, g.title)}<span>${esc(it.label)}</span><span class="pb"><i style="width:${Math.round(it.p * 100)}%"></i></span><b>${P(it.p)}</b>${ot}${c == null ? '<em></em>' : `<em>${c ? '✅' : '❌'}</em>`}</div>`;
+    const ot = o && o.odd ? `<u class="${o.odd * (it.pm ?? it.p) > 1.03 ? 'val' : ''}" title="${esc(o.book)}">${o.odd.toFixed(2)}</u>` : o && o.absent ? '<u class="mut" title="ბუკმეკერი არ სთავაზობს">—</u>' : '<u></u>';
+    return `<div class="mi ${pcls(it.p)}">${addBtn(f, it, g.title)}<span>${esc(it.label)}</span><span class="pb"><i style="width:${Math.round(it.p * 100)}%"></i></span><b title="${it.pm != null ? `მოდელი ${P(it.pm)} · ბუკმეკერი ${P(it.pb)}` : 'მხოლოდ მოდელი'}">${P(it.p)}</b>${ot}${c == null ? '<em></em>' : `<em>${c ? '✅' : '❌'}</em>`}</div>`;
   }).join('')}</div>`).join('') + `</div>`;
 }
 

@@ -142,3 +142,4 @@ table.ctx{width:100%;border-collapse:collapse;font-size:13px}.ctx th{text-align:
 @media (max-width:900px){.pickrow{grid-template-columns:70px 1fr 52px 24px}}
 .tsplit small{display:block;color:var(--mu);font-size:11px;margin-top:2px}
 .blend{display:block;font-size:11px;color:var(--mu);margin-top:2px}.blend b{color:#c9d3de}
+.booksel select{background:var(--p2);border:1px solid var(--ln);border-radius:6px;color:var(--tx);padding:2px 6px}

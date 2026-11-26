@@ -1,9 +1,9 @@
 // ===================== SportStats — ინტერფეისი =====================
-import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611261047';
-import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor, valuePicks } from './markets.js?v=202611261047';
-import { traits, patterns, keyAbsences, standings, restInfo, motivation, coachInfo, scenarios } from './insights.js?v=202611261047';
-import { REL } from './reliability.js?v=202611261047';
-import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611261047';
+import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611261058';
+import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor, valuePicks, BOOK } from './markets.js?v=202611261058';
+import { traits, patterns, keyAbsences, standings, restInfo, motivation, coachInfo, scenarios } from './insights.js?v=202611261058';
+import { REL } from './reliability.js?v=202611261058';
+import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611261058';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -162,6 +162,7 @@ function footer() {
   $('#foot').innerHTML = `<span>სეზონი ${DB.cfg.season}-${DB.cfg.season + 1}${ARCH ? ' · <b class="sim">არქივი</b>' : ST.sim ? ' · <b class="sim">საცდელი რეჟიმი</b>' : ''}</span>
     <span>ბოლო განახლება: ${upd}</span>${pg ? `<span>დეტალური სტატები: ${pg.detailed}/${pg.finished} მატჩი</span>` : ''}
     <span>ნუმეროლოგია: ${NUM.source === 'sheet' ? 'Google Sheet' : 'ჩაშენებული ასლი'}</span>
+    <label class="booksel">კოეფიციენტები: <select id="bookSel"><option value="cb"${BOOK.mode === 'cb' ? ' selected' : ''}>Crystalbet (შეფასება)</option><option value="raw"${BOOK.mode !== 'cb' ? ' selected' : ''}>Bet365 (ორიგინალი)</option></select></label>
     <a class="btn sm" target="_blank" href="https://github.com/merseysidel/sportstats/actions/workflows/update.yml">⟳ განახლება</a>`;
 }
 
@@ -209,6 +210,7 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   if (e.target.id === 'dpick' && e.target.value) { ST.date = e.target.value; ST.round = {}; render(); }
+  if (e.target.id === 'bookSel') { BOOK.mode = e.target.value; try { localStorage.setItem('ss_book', BOOK.mode); } catch (er) { } predCache.clear(); render(); renderTicket(); return; }
   if (e.target.matches('.roundsel')) { ST.round[e.target.dataset.c] = +e.target.value; render(); }
   if (e.target.matches('.scanf')) { ST.scan = Object.fromEntries([...document.querySelectorAll('.scanf')].map(x => [x.name, x.value])); render(); }
   if (e.target.matches('.cmpf')) { const a = $('#cmpA').value, b = $('#cmpB').value; location.hash = `#/cmp/${a}/${b}`; }

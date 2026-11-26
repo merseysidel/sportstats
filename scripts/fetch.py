@@ -198,7 +198,8 @@ def fetch_details(docs, core_teams, state):
     for code, doc in docs.items():
         group = doc["_group"]
         for f in doc["fixtures"]:
-            if f["s"] in FINISHED and f.get("st") is None and not f.get("nost"):
+            recent = (datetime.now(timezone.utc) - datetime.fromisoformat(f["d"])).total_seconds() < 3 * 86400
+            if f["s"] in FINISHED and f.get("st") is None and (not f.get("nost") or recent):  # ახალ მატჩზე სტატები API-ში ზოგჯერ აგვიანებს
                 if group == "league" or f["h"] in core_teams or f["a"] in core_teams:
                     todo.append((code, f))
     # რიგი: ჯერ ტურნირების რიგით (პრემიერლიგა პირველი), ტურნირში — უახლესი მატჩები პირველი

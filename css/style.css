@@ -143,3 +143,4 @@ table.ctx{width:100%;border-collapse:collapse;font-size:13px}.ctx th{text-align:
 .tsplit small{display:block;color:var(--mu);font-size:11px;margin-top:2px}
 .blend{display:block;font-size:11px;color:var(--mu);margin-top:2px}.blend b{color:#c9d3de}
 .booksel select{background:var(--p2);border:1px solid var(--ln);border-radius:6px;color:var(--tx);padding:2px 6px}
+.tsplit details{background:var(--p2);border-radius:7px;padding:6px 8px;margin-top:6px}.tsplit summary{cursor:pointer;font-weight:600}.tsplit details span{background:var(--p1)}

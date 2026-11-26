@@ -1,9 +1,9 @@
 // ===================== SportStats — ინტერფეისი =====================
-import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611261112';
-import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor, valuePicks, BOOK } from './markets.js?v=202611261112';
-import { traits, patterns, keyAbsences, standings, restInfo, motivation, coachInfo, scenarios } from './insights.js?v=202611261112';
-import { REL } from './reliability.js?v=202611261112';
-import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611261112';
+import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611261408';
+import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor, valuePicks, BOOK } from './markets.js?v=202611261408';
+import { traits, patterns, keyAbsences, standings, restInfo, motivation, coachInfo, scenarios } from './insights.js?v=202611261408';
+import { REL } from './reliability.js?v=202611261408';
+import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611261408';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -69,18 +69,28 @@ function renderTicket() {
   if (P0 < 0.3) warn += `<div class="tw bad">⚠️ ბილეთი მხოლოდ ${P(P0)}-ით დაჯდება — ზედმეტად გრძელია. სჯობს გაყო რამდენიმე ბილეთად (ვარიანტი ქვემოთაა) ან ამოიღე ყველაზე სუსტი ფსონი.</div>`;
   else if (P0 < 0.5) warn += `<div class="tw mid">ბილეთი ${P(P0)}-ით დაჯდება — საშუალო რისკი.</div>`;
   if (weak.size) warn += `<div class="tw bad">🔻 ყველაზე სუსტი: ${sorted.filter(l => weak.has(legKey(l))).map(l => `${esc(tn(l.f.h))}–${esc(tn(l.f.a))}: ${esc(l.pick)} (${P(l.p)})`).join('; ')}</div>`;
-  // გაყოფას ვთავაზობთ მხოლოდ მაშინ, როცა ბილეთის ალბათობა 30%-ზე ჩამოდის:
-  // ვეძებთ ბილეთების მინიმალურ რაოდენობას, რომ თითოეული მინიმუმ 30%-ით დაჯდეს
+  // გაყოფის ვარიანტები ალბათობის დიაპაზონებით (თითო ფსონი მხოლოდ ერთ ბილეთში)
   let split = '';
-  if (P0 < 0.3 && L.length >= 2) {
+  if (L.length >= 3 && P0 < 0.5) {
     const byP = [...L].sort((a, b) => b.p - a.p);
-    let groups = null;
-    for (let k = 2; k <= L.length; k++) {
-      const g = Array.from({ length: k }, () => []);
-      byP.forEach((l, i) => g[i % k].push(l));
-      if (g.every(x => x.reduce((s, l) => s * l.p, 1) >= 0.3)) { groups = g; break; }
-    }
-    if (groups) split = `<div class="tsplit"><b>გაყოფის ვარიანტი (${groups.length} ბილეთი, თითო 30%+):</b>${groups.map((g, i) => `<span>ბილეთი ${i + 1}: ${g.length} ფსონი · ${P(g.reduce((s, l) => s * l.p, 1))} · კოეფ. ${g.some(l => !l.odd) ? '~' : ''}${g.reduce((s, l) => s * (l.odd || 1 / l.p), 1).toFixed(2)}<small>${g.map(l => `${esc(tn(l.f.h))}–${esc(tn(l.f.a))}: ${esc(l.pick)}`).join(' · ')}</small></span>`).join('')}</div>`;
+    const prob = g => g.reduce((s, l) => s * l.p, 1), odds = g => g.reduce((s, l) => s * (l.odd || 1 / l.p), 1);
+    // ხარბი შევსება: ბილეთს ვავსებთ, სანამ ალბათობა ქვედა ზღვარს არ ჩამოსცდება
+    const pack = lo => { const out = []; let cur = [];
+      for (const l of byP) { if (cur.length && prob(cur) * l.p < lo) { out.push(cur); cur = []; } cur.push(l); }
+      if (cur.length) {
+        // ბოლოს დარჩენილ 1 ფსონს ცალკე ბილეთად არ ვტოვებთ — ვამატებთ ყველაზე „ძლიერ“ ბილეთს
+        if (out.length && cur.length === 1) { const best = out.reduce((a, g) => prob(g) > prob(a) ? g : a); best.push(cur[0]); } else out.push(cur);
+      }
+      return out; };
+    const longT = () => { const g = []; for (const l of byP) { if (g.length && prob(g) * l.p < 0.2) break; g.push(l); } return [g]; };
+    const variants = [
+      ['🛡️ საიმედო — 50%+', pack(0.5)],
+      ['⚖️ საშუალო — 35–50%', pack(0.35)],
+      ['🔥 რისკიანი — 30–35%', pack(0.30)],
+      ['🚀 ერთი გრძელი — 20–30%', longT()],
+    ];
+    const tk = (g, i) => `<span>ბილეთი ${i + 1}: ${g.length} ფსონი · <b>${P(prob(g))}</b> · კოეფ. <b>${g.some(l => !l.odd) ? '~' : ''}${odds(g).toFixed(2)}</b><small>${g.map(l => `${esc(tn(l.f.h))}–${esc(tn(l.f.a))}: ${esc(l.pick)}`).join(' · ')}</small></span>`;
+    split = `<div class="tsplit"><b>🤖 გაყოფის ვარიანტები:</b>${variants.map(([t, gs]) => `<details${t.startsWith('🛡') ? ' open' : ''}><summary>${t} <span class="mut">(${gs.length} ბილეთი)</span></summary>${gs.map(tk).join('')}</details>`).join('')}</div>`;
   }
   el.className = open ? 'open' : '';
   el.innerHTML = `<button class="tkbtn" data-act="tkopen">🧾 ბილეთი <b>${L.length}</b> · ${P(P0)} · ${est ? '~' : ''}${O.toFixed(2)}</button>

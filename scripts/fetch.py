@@ -115,7 +115,11 @@ def refresh_list(comp, state):
     doc = load(fp, None)
     if doc and doc.get("season") == SEASON:
         all_done = all(f["s"] in FINISHED or f["s"] in ("CANC", "ABD", "AWD", "WO") for f in doc["fixtures"])
-        if all_done or hours_since(st.get(code)) < 20:
+        # მატჩი, რომელიც უკვე უნდა დასრულებულიყო (დაწყებიდან 2.5+ საათი), მაგრამ შედეგი ჯერ არ გვაქვს → სიას ვაახლებთ
+        now = datetime.now(timezone.utc)
+        pending = any(f["s"] not in FINISHED and f["s"] not in ("CANC", "ABD", "AWD", "WO", "PST")
+                      and (now - datetime.fromisoformat(f["d"])).total_seconds() > 2.5 * 3600 for f in doc["fixtures"])
+        if all_done or (not pending and hours_since(st.get(code)) < 6):
             return doc
     rows = api("fixtures", league=comp["id"], season=SEASON)
     if not rows:

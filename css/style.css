@@ -140,3 +140,4 @@ table.ctx{width:100%;border-collapse:collapse;font-size:13px}.ctx th{text-align:
 .tw{margin-top:8px;padding:7px 10px;border-radius:7px;font-size:12px}.tw.bad{background:#3a1820;color:#ffd5dc}.tw.mid{background:#3a2a10;color:#ffe2a8}
 .tsplit{margin-top:8px;font-size:12px;display:flex;flex-direction:column;gap:3px}.tsplit span{background:var(--p2);border-radius:6px;padding:4px 8px}
 @media (max-width:900px){.pickrow{grid-template-columns:70px 1fr 52px 24px}}
+.tsplit small{display:block;color:var(--mu);font-size:11px;margin-top:2px}

@@ -1,9 +1,9 @@
 // ===================== SportStats — ინტერფეისი =====================
-import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611261040';
-import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor, valuePicks } from './markets.js?v=202611261040';
-import { traits, patterns, keyAbsences, standings, restInfo, motivation, coachInfo, scenarios } from './insights.js?v=202611261040';
-import { REL } from './reliability.js?v=202611261040';
-import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611261040';
+import { DB, indexData, predict, teamRows, aggregate, isFin, playerLines, playerTotals, refereeStats, injuriesNear } from './engine.js?v=202611261042';
+import { buildMarkets, aiPicks, explain, checkItem, tn, pickName, oddsFor, valuePicks } from './markets.js?v=202611261042';
+import { traits, patterns, keyAbsences, standings, restInfo, motivation, coachInfo, scenarios } from './insights.js?v=202611261042';
+import { REL } from './reliability.js?v=202611261042';
+import { NUM, loadNumerology, findClub, findPlayer, findPlayerAnywhere, base, combine, dayBase, fmtDate } from './numerology.js?v=202611261042';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -65,14 +65,21 @@ function renderTicket() {
   const chk = L.map(l => { const r = findItem(l.fid, l.group, l.label); return r ? checkItem(l.f, { ...r.it, pl: r.it.pl }) : null; });
   const ev = P0 * O;
   let warn = '';
-  if (P0 < 0.3) warn += `<div class="tw bad">⚠️ ბილეთი მხოლოდ ${P(P0)}-ით დაჯდება — ზედმეტად გრძელია. ${L.length > 4 ? `სჯობს გაყო ${Math.ceil(L.length / 3)} ბილეთად 3-3 ფსონით.` : 'ამოიღე ყველაზე სუსტი ფსონი.'}</div>`;
+  if (P0 < 0.3) warn += `<div class="tw bad">⚠️ ბილეთი მხოლოდ ${P(P0)}-ით დაჯდება — ზედმეტად გრძელია. სჯობს გაყო რამდენიმე ბილეთად (ვარიანტი ქვემოთაა) ან ამოიღე ყველაზე სუსტი ფსონი.</div>`;
   else if (P0 < 0.5) warn += `<div class="tw mid">ბილეთი ${P(P0)}-ით დაჯდება — საშუალო რისკი.</div>`;
   if (weak.size) warn += `<div class="tw bad">🔻 ყველაზე სუსტი: ${sorted.filter(l => weak.has(legKey(l))).map(l => `${esc(tn(l.f.h))}–${esc(tn(l.f.a))}: ${esc(l.pick)} (${P(l.p)})`).join('; ')}</div>`;
+  // გაყოფას ვთავაზობთ მხოლოდ მაშინ, როცა ბილეთის ალბათობა 30%-ზე ჩამოდის:
+  // ვეძებთ ბილეთების მინიმალურ რაოდენობას, რომ თითოეული მინიმუმ 30%-ით დაჯდეს
   let split = '';
-  if (L.length > 4) {
-    const groups = []; const byP = [...L].sort((a, b) => b.p - a.p);
-    byP.forEach((l, i) => (groups[i % Math.ceil(L.length / 3)] ||= []).push(l));
-    split = `<div class="tsplit"><b>გაყოფის ვარიანტი:</b>${groups.map((g, i) => `<span>ბილეთი ${i + 1}: ${g.length} ფსონი · ${P(g.reduce((s, l) => s * l.p, 1))} · კოეფ. ${g.some(l => !l.odd) ? '~' : ''}${g.reduce((s, l) => s * (l.odd || 1 / l.p), 1).toFixed(2)}</span>`).join('')}</div>`;
+  if (P0 < 0.3 && L.length >= 2) {
+    const byP = [...L].sort((a, b) => b.p - a.p);
+    let groups = null;
+    for (let k = 2; k <= L.length; k++) {
+      const g = Array.from({ length: k }, () => []);
+      byP.forEach((l, i) => g[i % k].push(l));
+      if (g.every(x => x.reduce((s, l) => s * l.p, 1) >= 0.3)) { groups = g; break; }
+    }
+    if (groups) split = `<div class="tsplit"><b>გაყოფის ვარიანტი (${groups.length} ბილეთი, თითო 30%+):</b>${groups.map((g, i) => `<span>ბილეთი ${i + 1}: ${g.length} ფსონი · ${P(g.reduce((s, l) => s * l.p, 1))} · კოეფ. ${g.some(l => !l.odd) ? '~' : ''}${g.reduce((s, l) => s * (l.odd || 1 / l.p), 1).toFixed(2)}<small>${g.map(l => `${esc(tn(l.f.h))}–${esc(tn(l.f.a))}: ${esc(l.pick)}`).join(' · ')}</small></span>`).join('')}</div>`;
   }
   el.className = open ? 'open' : '';
   el.innerHTML = `<button class="tkbtn" data-act="tkopen">🧾 ბილეთი <b>${L.length}</b> · ${P(P0)} · ${est ? '~' : ''}${O.toFixed(2)}</button>

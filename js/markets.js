@@ -1,6 +1,6 @@
 // ===================== ფსონების კატალოგი + AI ფსონები (შაბლონური ტექსტით) =====================
-import { CALIB } from './calib.js?v=202611271028';
-import { DB, S, scorerProbs } from './engine.js?v=202611271028';
+import { CALIB } from './calib.js?v=202611271029';
+import { DB, S, scorerProbs } from './engine.js?v=202611271029';
 
 const fmt1 = x => x == null ? '—' : (Math.round(x * 10) / 10).toString();
 export const tn = id => DB.teams[id]?.name || '#' + id;
@@ -318,7 +318,9 @@ export function checkItem(f, it) {
   const g = (f.s === 'AET' || f.s === 'PEN') ? [Math.min(f.g[0], f.g[1]), Math.min(f.g[0], f.g[1])] : f.g;
   const tot = g[0] + g[1], st = f.st;
   const L = it.label, cmp = (v) => v == null ? null : it.dir === 'o' ? v > it.line : v < it.line;
-  const sv = (i, side) => !st ? null : side == null ? (st[0][i] || 0) + (st[1][i] || 0) : (st[side][i] || 0);
+  // სტატები ზოგჯერ აგვიანებს — ყვითლებს მოვლენებიდანაც ვითვლით
+  const evYC = side => (f.ev || []).filter(e => e[3] === 'C' && /Yellow/i.test(e[4] || '') && (side == null || e[2] === side)).length;
+  const sv = (i, side) => { if (!st) { if (i === 10 && f.ev && f.ev.length) return evYC(side); return null; } return side == null ? (st[0][i] || 0) + (st[1][i] || 0) : (st[side][i] || 0); };
   const res = g[0] > g[1] ? '1' : g[0] < g[1] ? '2' : 'X';
   switch (it.fam) {
     case '1x2': return L.startsWith(res + ' ');

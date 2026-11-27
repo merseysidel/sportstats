@@ -1,6 +1,6 @@
 // ===================== ფსონების კატალოგი + AI ფსონები (შაბლონური ტექსტით) =====================
-import { CALIB } from './calib.js?v=202611261408';
-import { DB, S, scorerProbs } from './engine.js?v=202611261408';
+import { CALIB } from './calib.js?v=202611271028';
+import { DB, S, scorerProbs } from './engine.js?v=202611271028';
 
 const fmt1 = x => x == null ? '—' : (Math.round(x * 10) / 10).toString();
 export const tn = id => DB.teams[id]?.name || '#' + id;
@@ -273,6 +273,7 @@ export function aiPicks(mk, min = 0.7, max = 8, f = null) {
       else it.est = 1 / it.p;
     }
     if (it.fam === 'ah' && it.label.includes('+')) continue; // „+1.5“ ფორა ორმაგ შანსს იმეორებს
+    if ((it.fam === 'hgoals' || it.fam === 'agoals') && it.dir === 'o' && it.line === 0.5) continue; // გუნდის „0.5>“ გოლი Crystalbet-ზე არ არის
     const k = it.fam + (it.dir || '') + (it.fam === 'ps' || it.fam === 'psot' || it.fam === 'pyc' ? it.label : '');
     const b = best[k];
     if (!b) { best[k] = it; continue; }
